@@ -1,0 +1,166 @@
+
+<!-- Homescreen for the app/website -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StayFinder AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+
+<body>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">🏨</div>
+      <div class="logo-text">Stay<span>Finder</span></div>
+    </div>
+
+    <div class="header-status">
+      <div class="status-dot"></div>
+      AI Concierge Active
+    </div>
+    
+    <div class="header-actions">
+      <button class="btn-ghost" onclick="resetChat()">New Search</button>
+    </div>
+
+  </header>
+
+  <!-- CHAT PANEL -->
+  <main class="chat-panel">
+    <div class="messages" id="messages">
+
+      <!-- Welcome state shown initially -->
+      <div class="welcome" id="welcome-screen">
+        <div class="welcome-eyebrow">Powered by Claude AI</div>
+        <div class="welcome-title">Find your perfect<br><em>place to stay</em></div>
+        <div class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference.</div>
+        
+        <!-- Quick Prompts -->
+        <div class="quick-prompts">
+          <div class="quick-prompt" onclick="quickSend(this)">🌴 Beach trip for 2 in Miami</div>
+          <div class="quick-prompt" onclick="quickSend(this)">🏙️ NYC hotel under $200/night</div>
+          <div class="quick-prompt" onclick="quickSend(this)">🐾 Pet-friendly Airbnb in Portland</div>
+          <div class="quick-prompt" onclick="quickSend(this)">🎿 Ski cabin in Colorado, 6 guests</div>
+          <div class="quick-prompt" onclick="quickSend(this)">🌆 Business trip to Chicago, near transit</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="chat-input" rows="1" placeholder="Where are you headed? Tell me about your trip…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+
+      </div>
+      <div class="input-hint">Powered by Claude · Real listings via web search</div>
+    </div>
+  </main>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <div class="sidebar-header">
+      <div class="sidebar-title">Your Preferences</div>
+      <div class="sidebar-sub">Updates as we chat</div>
+    </div>
+
+    <div class="sidebar-body" id="sidebar-body">
+
+      <div class="empty-state" id="pref-empty">
+        <div class="empty-icon">✦</div>
+        <div class="empty-text">Your travel preferences will<br>appear here as we talk.</div>
+      </div>
+
+      <div id="pref-content" style="display:none;">
+        <div class="api-notice" id="api-notice" style="display:none;">
+          ✓ Connected — searching live listings
+        </div>
+
+        <div class="pref-section" id="sec-progress" style="display:none;">
+          <div class="pref-label">Profile Complete</div>
+          <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-fill" style="width:0%"></div></div>
+          <div class="progress-label"><span id="progress-text">Just getting started</span><span id="progress-pct">0%</span></div>
+        </div>
+
+        <div class="divider" id="div-0" style="display:none;"></div>
+
+        <div class="pref-section" id="sec-destination" style="display:none;">
+          <div class="pref-label">Destination</div>
+          <div class="pref-value" id="pref-destination">—</div>
+        </div>
+
+        <div class="pref-section" id="sec-dates" style="display:none;">
+          <div class="pref-label">Dates</div>
+          <div class="pref-value" id="pref-dates">—</div>
+        </div>
+
+        <div class="pref-section" id="sec-guests" style="display:none;">
+          <div class="pref-label">Guests</div>
+          <div class="pref-value" id="pref-guests">—</div>
+        </div>
+
+        <div class="divider" id="div-1" style="display:none;"></div>
+
+        <div class="pref-section" id="sec-budget" style="display:none;">
+          <div class="pref-label">Budget / Night</div>
+          <div class="budget-range" id="pref-budget">—</div>
+        </div>
+
+        <div class="pref-section" id="sec-type" style="display:none;">
+          <div class="pref-label">Accommodation</div>
+          <div class="pref-value" id="pref-type">—</div>
+        </div>
+
+        <div class="divider" id="div-2" style="display:none;"></div>
+
+        <div class="pref-section" id="sec-transport" style="display:none;">
+          <div class="pref-label">Transportation</div>
+          <div class="pref-value" id="pref-transport">—</div>
+        </div>
+
+        <div class="pref-section" id="sec-activities" style="display:none;">
+          <div class="pref-label">Activities & Interests</div>
+          <div class="pref-tags" id="pref-activities"></div>
+        </div>
+
+        <div class="pref-section" id="sec-amenities" style="display:none;">
+          <div class="pref-label">Must-Have Amenities</div>
+          <div class="pref-tags" id="pref-amenities"></div>
+        </div>
+
+        <div class="pref-section" id="sec-special" style="display:none;">
+          <div class="pref-label">Special Requirements</div>
+          <div class="pref-tags" id="pref-special"></div>
+        </div>
+
+        <div class="divider" id="div-3" style="display:none;"></div>
+
+        <button class="search-btn" id="search-btn" style="display:none;" onclick="triggerSearch()">
+          🔍 Search Stays Now
+        </button>
+        
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+  <script src="main.js"></script>
+
+</body>
+</html>
