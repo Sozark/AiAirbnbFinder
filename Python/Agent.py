@@ -7,7 +7,7 @@ import json
 import re
 from typing import Generator
 import anthropic
-from preferences import AccommodationPreferences
+from Preferences import AccommodationPreferences
 
 
 SYSTEM_PROMPT = """You are StayFinder AI — a warm, expert travel assistant that helps users find the perfect Airbnb space or hotel. Your job is twofold:

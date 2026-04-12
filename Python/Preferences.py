@@ -61,27 +61,37 @@ class AccommodationPreferences:
         parts = []
         if self.destination:
             parts.append(f"📍 Destination: {self.destination}")
+
         if self.num_guests:
             parts.append(f"👥 Guests: {self.num_guests}")
+
         if self.check_in and self.check_out:
             parts.append(f"📅 Dates: {self.check_in} → {self.check_out}")
+
         if self.budget_max:
             budget_str = f"up to {self.budget_currency} {self.budget_max:.0f}/night"
             if self.budget_min:
                 budget_str = f"{self.budget_currency} {self.budget_min:.0f}–{self.budget_max:.0f}/night"
             parts.append(f"💰 Budget: {budget_str}")
+
         if self.accommodation_type:
             parts.append(f"🏠 Type: {self.accommodation_type}")
+
         if self.amenities:
             parts.append(f"✨ Amenities: {', '.join(self.amenities)}")
+
         if self.transportation_needs:
             parts.append(f"🚌 Transport: {self.transportation_needs}")
+
         if self.activities:
             parts.append(f"🎯 Activities: {', '.join(self.activities)}")
+
         if self.pet_friendly:
             parts.append("🐾 Pet-friendly required")
+
         if self.accessible:
             parts.append("♿ Accessibility required")
+            
         if self.special_requests:
             parts.append(f"📝 Special: {self.special_requests}")
         return "\n".join(parts) if parts else "No preferences set yet."
