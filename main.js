@@ -58,6 +58,7 @@ function saveCurrentSearch() {
   };
 
   searches.unshift(entry);         // newest first
+  
   if (searches.length > 10) searches.pop(); // cap at 10
   localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(searches));
   renderSavedSearches();
@@ -122,6 +123,7 @@ function renderSavedSearches() {
 // ── Share Link ───────────────────────────────────────────────────
 function shareSearch() {
   const prefs = state.prefs;
+  
   if (!prefs.destination && !state.demoCity) {
     showToast('Start a search first to share it.');
     return;
@@ -138,6 +140,7 @@ function shareSearch() {
 
   // Copy to clipboard
   if (navigator.clipboard?.writeText) {
+    
     navigator.clipboard.writeText(shareUrl).then(() => {
       showShareToast(shareUrl);
     }).catch(() => fallbackCopy(shareUrl));
