@@ -7,6 +7,9 @@
   <title>StayFinder AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <!-- Mapbox GL JS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
   <link rel="stylesheet" href="css/main.css">
 </head>
 
@@ -15,11 +18,46 @@
 <!-- Mobile sidebar backdrop -->
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
+<!-- Comparison modal backdrop -->
+<div class="compare-overlay" id="compare-overlay" onclick="closeCompare()"></div>
+
+<!-- ── COMPARISON MODAL ── -->
+<div class="compare-modal" id="compare-modal">
+
+  <div class="compare-header">
+    <div class="compare-title">Side-by-Side Comparison</div>
+    <button class="compare-close" onclick="closeCompare()">✕</button>
+  </div>
+  
+  <div class="compare-body" id="compare-body">
+    <!-- Populated by JS -->
+  </div>
+</div>
+
+<!-- ── MAP PANEL (slide-up overlay on mobile, right panel on desktop) ── -->
+<div class="map-panel" id="map-panel">
+
+  <div class="map-header">
+
+    <!-- MAP TITLE -->
+    <div class="map-title-row">
+      <span class="map-title">Map View</span>
+      <span class="map-count" id="map-count"></span>
+    </div>
+
+    <button class="map-close-btn" onclick="hideMap()">✕</button>
+  </div>
+
+  <div id="mapbox-container"></div>
+
+</div>
+
 <div class="app">
 
   <!-- HEADER -->
   <header class="header">
 
+    <!-- LOGO -->
     <div class="logo">
       <div class="logo-icon">🏨</div>
       <div class="logo-text">Stay<span>Finder</span></div>
@@ -31,24 +69,30 @@
     </div>
 
     <div class="header-actions">
-      <!-- Preferences button — visible on mobile only -->
-      <button class="sidebar-toggle" onclick="openSidebar()">
-        ✦ Preferences
+      
+      <button class="btn-ghost" onclick="saveCurrentSearch()" title="Save this search">🔖 Save</button>
+      <button class="btn-ghost" onclick="shareSearch()" title="Copy shareable link">🔗 Share</button>
+
+      <!-- Map toggle — appears after listings found -->
+      <button class="btn-ghost map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()" style="display:none;">
+        🗺 Map
       </button>
+
+      <button class="sidebar-toggle" onclick="openSidebar()">✦ Preferences</button>
       <button class="btn-ghost" onclick="resetChat()">New Search</button>
     </div>
-
   </header>
 
   <!-- CHAT PANEL -->
   <main class="chat-panel">
     <div class="messages" id="messages">
 
-      <!-- Welcome screen -->
       <div class="welcome" id="welcome-screen">
+
         <div class="welcome-title">Find your perfect<br><em>place to stay</em></div>
         <div class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference.</div>
-
+        
+        <!-- These Propmts load when the users first open the app -->
         <div class="quick-prompts">
           <div class="quick-prompt" onclick="quickSend(this)">🌴 Beach trip for 2 in Miami</div>
           <div class="quick-prompt" onclick="quickSend(this)">🏙️ NYC hotel under $200/night</div>
@@ -56,12 +100,14 @@
           <div class="quick-prompt" onclick="quickSend(this)">🎿 Ski cabin in Colorado, 6 guests</div>
           <div class="quick-prompt" onclick="quickSend(this)">🌆 Business trip to Chicago, near transit</div>
         </div>
-      </div>
 
+      </div>
     </div>
 
     <div class="input-area">
+
       <div class="input-row">
+
         <textarea
           id="chat-input"
           rows="1"
@@ -69,13 +115,18 @@
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"
         ></textarea>
+        
         <button class="send-btn" id="send-btn" onclick="sendMessage()">
+
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
           </svg>
+
         </button>
       </div>
-      <div class="input-hint">Powered by Claude · Real listings via web search</div>
+
+      <div class="input-hint"></div>
+    
     </div>
   </main>
 
@@ -83,19 +134,33 @@
   <aside class="sidebar" id="sidebar">
 
     <div class="sidebar-header">
+
+      <!-- Title of Sidebar -->
       <div class="sidebar-title-group">
         <div class="sidebar-title">Your Preferences</div>
         <div class="sidebar-sub">Updates as we chat</div>
       </div>
-      <!-- Close button shown on mobile -->
+
       <button class="sidebar-close" onclick="closeSidebar()">✕</button>
     </div>
 
-    <div class="sidebar-body" id="sidebar-body">
+    <div class="sidebar-body">
 
       <div class="empty-state" id="pref-empty">
         <div class="empty-icon">✦</div>
         <div class="empty-text">Your travel preferences will<br>appear here as we talk.</div>
+      </div>
+
+      <!-- Saved searches section -->
+      <div id="sec-saved" style="display:none;">
+
+        <!-- Divider for saved searches -->
+        <div class="divider"></div>
+          <div class="pref-section">
+          <div class="pref-label">Saved Searches</div>
+          <div id="saved-searches-list"></div>
+        </div>
+
       </div>
 
       <div id="pref-content" style="display:none;">
@@ -106,27 +171,35 @@
 
         <div class="pref-section" id="sec-progress" style="display:none;">
           <div class="pref-label">Profile Complete</div>
+
+          <!-- Progress Bar -->
           <div class="progress-bar-wrap">
             <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
           </div>
+
+          <!-- Progress Label -->
           <div class="progress-label">
             <span id="progress-text">Just getting started</span>
             <span id="progress-pct">0%</span>
           </div>
+
         </div>
 
         <div class="divider" id="div-0" style="display:none;"></div>
 
+        <!-- Preferences - DESTINATION -->
         <div class="pref-section" id="sec-destination" style="display:none;">
           <div class="pref-label">Destination</div>
           <div class="pref-value" id="pref-destination">—</div>
         </div>
 
+        <!-- Preferences - DATES -->
         <div class="pref-section" id="sec-dates" style="display:none;">
           <div class="pref-label">Dates</div>
           <div class="pref-value" id="pref-dates">—</div>
         </div>
 
+        <!-- Preferences - GUESTS -->
         <div class="pref-section" id="sec-guests" style="display:none;">
           <div class="pref-label">Guests</div>
           <div class="pref-value" id="pref-guests">—</div>
@@ -134,36 +207,37 @@
 
         <div class="divider" id="div-1" style="display:none;"></div>
 
+        <!-- Preferences BUDGET/NIGHTS -->
         <div class="pref-section" id="sec-budget" style="display:none;">
           <div class="pref-label">Budget / Night</div>
           <div class="budget-range" id="pref-budget">—</div>
         </div>
 
+        <!-- Preferences - ACCOMODATIONS -->
         <div class="pref-section" id="sec-type" style="display:none;">
           <div class="pref-label">Accommodation</div>
           <div class="pref-value" id="pref-type">—</div>
         </div>
 
+        <!-- Preferences -->
         <div class="divider" id="div-2" style="display:none;"></div>
 
+        <!-- Preferences - TRANSPORTATION -->
         <div class="pref-section" id="sec-transport" style="display:none;">
           <div class="pref-label">Transportation</div>
           <div class="pref-value" id="pref-transport">—</div>
         </div>
 
+        <!-- Preferences - ACTIVITIES/INTERESTS -->
         <div class="pref-section" id="sec-activities" style="display:none;">
           <div class="pref-label">Activities & Interests</div>
           <div class="pref-tags" id="pref-activities"></div>
         </div>
 
+        <!-- Preferences - AMENITIES -->
         <div class="pref-section" id="sec-amenities" style="display:none;">
           <div class="pref-label">Must-Have Amenities</div>
           <div class="pref-tags" id="pref-amenities"></div>
-        </div>
-
-        <div class="pref-section" id="sec-special" style="display:none;">
-          <div class="pref-label">Special Requirements</div>
-          <div class="pref-tags" id="pref-special"></div>
         </div>
 
         <div class="divider" id="div-3" style="display:none;"></div>
@@ -171,6 +245,19 @@
         <button class="search-btn" id="search-btn" style="display:none;" onclick="triggerSearch()">
           🔍 Search Stays Now
         </button>
+
+      </div>
+
+      <!-- Phase 3 action buttons — always visible at bottom of sidebar -->
+    <div class="sidebar-actions">
+
+      <button class="sidebar-action-btn" onclick="saveCurrentSearch()">
+        <span>🔖</span> Save This Search
+      </button>
+
+      <button class="sidebar-action-btn sidebar-action-share" onclick="shareSearch()">
+        <span>🔗</span> Share Search
+      </button>
 
       </div>
     </div>
