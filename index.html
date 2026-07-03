@@ -5,12 +5,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>StayFinder AI</title>
+  <meta name="description" content="An AI concierge that finds your perfect Airbnb or hotel through a simple conversation.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
   <link rel="stylesheet" href="css/main.css">
+
+  <!-- PWA: installable app -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#c8972a">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="StayFinder">
 </head>
 
 <body>
@@ -28,7 +36,7 @@
     <div class="compare-title">Side-by-Side Comparison</div>
     <button class="compare-close" onclick="closeCompare()">✕</button>
   </div>
-  
+
   <div class="compare-body" id="compare-body">
     <!-- Populated by JS -->
   </div>
@@ -69,7 +77,7 @@
     </div>
 
     <div class="header-actions">
-      
+
       <button class="btn-ghost" onclick="saveCurrentSearch()" title="Save this search">🔖 Save</button>
       <button class="btn-ghost" onclick="shareSearch()" title="Copy shareable link">🔗 Share</button>
 
@@ -85,14 +93,15 @@
 
   <!-- CHAT PANEL -->
   <main class="chat-panel">
-    <div class="messages" id="messages">
+    <div class="messages" id="messages" role="log" aria-live="polite" aria-atomic="false" aria-label="Conversation with StayFinder AI">
 
       <div class="welcome" id="welcome-screen">
 
+        <div class="welcome-eyebrow">Powered by Claude AI</div>
         <div class="welcome-title">Find your perfect<br><em>place to stay</em></div>
-        <div class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference.</div>
-        
-        <!-- These Propmts load when the users first open the app -->
+        <div class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference. I point you to real listings; you always confirm price and book on the actual site.</div>
+
+        <!-- These prompts load when the user first opens the app -->
         <div class="quick-prompts">
           <div class="quick-prompt" onclick="quickSend(this)">🌴 Beach trip for 2 in Miami</div>
           <div class="quick-prompt" onclick="quickSend(this)">🏙️ NYC hotel under $200/night</div>
@@ -104,9 +113,15 @@
       </div>
     </div>
 
+    <!-- Suggested-reply chips are injected here by main.js, above the input -->
+    <div id="chips-row"></div>
+
     <div class="input-area">
 
       <div class="input-row">
+
+        <!-- Voice input: speak instead of type -->
+        <button class="mic-btn" id="mic-btn" onclick="toggleVoice()" title="Speak your answer" aria-label="Speak your answer">🎤</button>
 
         <textarea
           id="chat-input"
@@ -114,9 +129,10 @@
           placeholder="Where are you headed? Tell me about your trip…"
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"
+          aria-label="Type your message"
         ></textarea>
-        
-        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" aria-label="Send">
 
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -125,8 +141,8 @@
         </button>
       </div>
 
-      <div class="input-hint"></div>
-    
+      <div class="input-hint">StayFinder points you to real listings — always confirm price &amp; availability before booking · <a href="/privacy.html" class="footer-link">Privacy</a></div>
+
     </div>
   </main>
 
@@ -248,7 +264,7 @@
 
       </div>
 
-      <!-- Phase 3 action buttons — always visible at bottom of sidebar -->
+      <!-- Action buttons — always visible at bottom of sidebar -->
     <div class="sidebar-actions">
 
       <button class="sidebar-action-btn" onclick="saveCurrentSearch()">
@@ -265,7 +281,17 @@
 
 </div>
 
+<!-- Local config (gitignored). Copy config.example.js -> config.local.js.
+     If missing, main.js falls back to /api/chat with no Mapbox token. -->
+<script src="config.local.js" onerror="this.remove()"></script>
 <script src="main.js"></script>
+
+<!-- Register the service worker so the site is installable as an app -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+</script>
 
 </body>
 </html>

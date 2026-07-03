@@ -5,8 +5,8 @@ Helps users find Airbnb spaces and hotels based on their preferences.
 
 import os
 import sys
-from Agent import AccommodationAgent
-from UI import CLI
+from agent import AccommodationAgent
+from ui import CLI
 
 
 def main():
@@ -18,8 +18,8 @@ def main():
         print(CLI.info("Set it with: export ANTHROPIC_API_KEY='your-key-here'"))
         sys.exit(1)
 
-    Agent = AccommodationAgent(api_key=api_key)
-    cli = CLI(Agent)
+    agent = AccommodationAgent(api_key=api_key)
+    cli = CLI(agent)
     cli.run()
 
 
