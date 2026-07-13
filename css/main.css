@@ -633,7 +633,15 @@ body::before {
 @media (max-width: 480px) {
   .header { padding: 0 14px; }
   .logo-text { font-size: 19px; }
-  .btn-ghost { padding: 5px 10px; font-size: 11px; }
+  .btn-ghost { padding: 5px 10px; font-size: 11px; flex-shrink: 0; }
+  /* Header actions can outgrow narrow phones (Save+Share+Map+Preferences+New Search) —
+     scroll horizontally instead of clipping buttons off-screen and out of reach. */
+  .header-actions {
+    overflow-x: auto; flex-shrink: 1;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .header-actions::-webkit-scrollbar { display: none; }
+  .sidebar-toggle { flex-shrink: 0; }
   .messages  { padding: 16px 14px; gap: 14px; }
   .welcome   { padding: 28px 16px; }
   .welcome-title { font-size: 32px; }
