@@ -830,17 +830,28 @@ function getCityCoords(city) { return CITY_COORDS[city] || [-74.00, 40.71]; }
 
 function detectCity(msg) {
   const lower = msg.toLowerCase();
-  for (const [alias, canonical] of Object.entries(CITY_ALIASES)) {
-    if (lower.includes(alias)) return canonical;
+  // Word-boundary match, not substring — plain .includes() let short aliases like
+  // "la" fire inside unrelated words (e.g. "portLAnd", "atLAnta"), silently hijacking
+  // the detected city. Longest alias first so "los angeles" wins over "la" either way.
+  const aliases = Object.keys(CITY_ALIASES).sort((a, b) => b.length - a.length);
+  for (const alias of aliases) {
+    const re = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) return CITY_ALIASES[alias];
   }
   const match = lower.match(/\bin\s+([a-z\s]+?)(?:\s+for|\s+with|\s*[,\.!?]|$)/);
   if (match) { const c = match[1].trim(); if (c.length>2&&c.length<40) return c.charAt(0).toUpperCase()+c.slice(1); }
   return null;
 }
 function detectGuests(msg) {
+  const lower = msg.toLowerCase();
+  // Digits first — more explicit signal than a spelled-out number.
+  const m = lower.match(/(\d+)\s*(?:guest|person|people|adult)/);
+  if (m) return parseInt(m[1]);
+  // Word-boundary match, not substring — "one"/"two" as plain .includes() fired
+  // inside "honeymoon", "someone", "phone", silently reporting 1 guest for any of them.
   const numWords={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8};
-  for(const [w,n] of Object.entries(numWords)) if(msg.toLowerCase().includes(w)) return n;
-  const m=msg.match(/(\d+)\s*(?:guest|person|people|adult)/); return m?parseInt(m[1]):null;
+  for(const [w,n] of Object.entries(numWords)) if(new RegExp(`\\b${w}\\b`,'i').test(lower)) return n;
+  return null;
 }
 function detectBudget(msg) {
   const lower=msg.toLowerCase();
