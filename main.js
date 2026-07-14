@@ -830,8 +830,13 @@ function getCityCoords(city) { return CITY_COORDS[city] || [-74.00, 40.71]; }
 
 function detectCity(msg) {
   const lower = msg.toLowerCase();
-  for (const [alias, canonical] of Object.entries(CITY_ALIASES)) {
-    if (lower.includes(alias)) return canonical;
+  // Word-boundary match, not substring — plain .includes() let short aliases like
+  // "la" fire inside unrelated words (e.g. "portLAnd", "atLAnta"), silently hijacking
+  // the detected city. Longest alias first so "los angeles" wins over "la" either way.
+  const aliases = Object.keys(CITY_ALIASES).sort((a, b) => b.length - a.length);
+  for (const alias of aliases) {
+    const re = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) return CITY_ALIASES[alias];
   }
   const match = lower.match(/\bin\s+([a-z\s]+?)(?:\s+for|\s+with|\s*[,\.!?]|$)/);
   if (match) { const c = match[1].trim(); if (c.length>2&&c.length<40) return c.charAt(0).toUpperCase()+c.slice(1); }
