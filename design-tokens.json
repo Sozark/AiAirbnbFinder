@@ -1,0 +1,48 @@
+{
+  "$description": "StayFinder AI design tokens. Import via the Tokens Studio for Figma plugin to generate Figma Variables that match css/main.css exactly.",
+  "Primitives": {
+    "color": {
+      "espresso":    { "value": "#130e08", "type": "color", "description": "App background" },
+      "bark":        { "value": "#1e1610", "type": "color", "description": "Panel / bubble background" },
+      "driftwood":   { "value": "#2c2118", "type": "color", "description": "Card / input background" },
+      "mahogany":    { "value": "#3d2e1e", "type": "color", "description": "User avatar background" },
+      "gold":        { "value": "#c8972a", "type": "color", "description": "Primary accent" },
+      "gold-light":  { "value": "#e8b94a", "type": "color", "description": "Primary accent, light" },
+      "amber":       { "value": "#d4793a", "type": "color", "description": "Secondary accent" },
+      "cream":       { "value": "#f0e6d3", "type": "color", "description": "Primary text" },
+      "cream-dim":   { "value": "#a89880", "type": "color", "description": "Secondary text" },
+      "cream-faint": { "value": "#5a4e40", "type": "color", "description": "Tertiary text / placeholders" },
+      "sand":        { "value": "#e8d5b8", "type": "color", "description": "User bubble text" },
+      "teal":        { "value": "#2a8a7a", "type": "color", "description": "Status / success accent" },
+      "teal-light":  { "value": "#3ab89f", "type": "color", "description": "Status / success accent, light" }
+    },
+    "fontFamilies": {
+      "display": { "value": "Cormorant Garamond", "type": "fontFamilies", "description": "Headings, titles, prices" },
+      "body":    { "value": "DM Sans", "type": "fontFamilies", "description": "UI text, body copy" }
+    },
+    "radius": {
+      "radius":    { "value": "14px", "type": "borderRadius" },
+      "radius-sm": { "value": "8px",  "type": "borderRadius" }
+    }
+  },
+  "Semantic": {
+    "color": {
+      "background":            { "value": "{Primitives.color.espresso}", "type": "color" },
+      "surface":                { "value": "{Primitives.color.bark}", "type": "color" },
+      "surface-raised":         { "value": "{Primitives.color.driftwood}", "type": "color" },
+      "text-primary":           { "value": "{Primitives.color.cream}", "type": "color" },
+      "text-secondary":         { "value": "{Primitives.color.cream-dim}", "type": "color" },
+      "text-tertiary":          { "value": "{Primitives.color.cream-faint}", "type": "color" },
+      "accent-primary":         { "value": "{Primitives.color.gold}", "type": "color" },
+      "accent-primary-light":   { "value": "{Primitives.color.gold-light}", "type": "color" },
+      "accent-secondary":       { "value": "{Primitives.color.amber}", "type": "color" },
+      "status-positive":        { "value": "{Primitives.color.teal-light}", "type": "color" },
+      "border-subtle":          { "value": "{Primitives.color.gold}", "type": "color", "description": "Used at low opacity (e.g. 12-25%) for hairline borders" }
+    },
+    "typography": {
+      "heading-display": { "value": { "fontFamily": "{Primitives.fontFamilies.display}", "fontWeight": "500", "fontSize": "42px", "lineHeight": "1.2" }, "type": "typography" },
+      "body-default":    { "value": { "fontFamily": "{Primitives.fontFamilies.body}",    "fontWeight": "300", "fontSize": "15px", "lineHeight": "1.65" }, "type": "typography" },
+      "label-caps":      { "value": { "fontFamily": "{Primitives.fontFamilies.body}",    "fontWeight": "500", "fontSize": "10px", "lineHeight": "1.4", "letterSpacing": "0.12em", "textCase": "uppercase" }, "type": "typography" }
+    }
+  }
+}

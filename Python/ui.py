@@ -9,7 +9,7 @@ import anthropic
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from Agent import AccommodationAgent
+    from agent import AccommodationAgent
 
 # ANSI color codes
 class Colors:
@@ -93,11 +93,11 @@ class CLI:
         print()
 
     def _print_preferences(self):
-        if not self.Agent.has_preferences():
+        if not self.agent.has_preferences():
             print(f"\n{C.DIM}  No preferences gathered yet. Start chatting!{C.RESET}\n")
             return
         print(f"\n{C.BOLD}{C.BRIGHT_CYAN}Current Preferences:{C.RESET}")
-        for line in self.Agent.get_preferences_summary().split("\n"):
+        for line in self.agent.get_preferences_summary().split("\n"):
             print(f"  {line}")
         print()
 
@@ -126,7 +126,7 @@ class CLI:
         buffer = ""
 
         try:
-            for chunk in self.Agent.chat("Hello! I'm looking for a place to stay."):
+            for chunk in self.agent.chat("Hello! I'm looking for a place to stay."):
                 # Check if this is a preference block starting
                 buffer += chunk
                 if "<PREFERENCES>" in buffer:
@@ -167,10 +167,10 @@ class CLI:
                 continue
 
             if user_input.lower() == "/reset":
-                self.Agent.reset()
+                self.agent.reset()
                 print(f"\n{self.success('Search reset. Starting fresh!')}\n")
                 print(self._format_ai_prefix(), end="", flush=True)
-                for chunk in self.Agent.chat("Hello! I'd like to start a new search."):
+                for chunk in self.agent.chat("Hello! I'd like to start a new search."):
                     buffer += chunk
                     if "<PREFERENCES>" in buffer or "</PREFERENCES>" in buffer:
                         buffer = re.sub(r'<PREFERENCES>.*?</PREFERENCES>', '', buffer, flags=re.DOTALL)
@@ -186,7 +186,7 @@ class CLI:
             search_notified = False
 
             try:
-                for chunk in self.Agent.chat(user_input):
+                for chunk in self.agent.chat(user_input):
                     buffer += chunk
 
                     # Notify user when a web search is happening (heuristic)
@@ -231,8 +231,8 @@ class CLI:
             print("\n")
 
             # Show preferences reminder after first search
-            if self.Agent.search_performed and self.Agent.has_preferences():
+            if self.agent.search_performed and self.agent.has_preferences():
                 pref_hint = f"{C.DIM}  (Type {C.BRIGHT_YELLOW}/preferences{C.RESET}{C.DIM} to review your search criteria){C.RESET}"
                 print(pref_hint)
-                self.Agent.search_performed = False  # Only show once per search
+                self.agent.search_performed = False  # Only show once per search
                 print()

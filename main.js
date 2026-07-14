@@ -1,31 +1,55 @@
 // ================================================================
-// StayFinder AI — main.js  
+// StayFinder AI — main.js
 // ================================================================
 
- const MAPBOX_TOKEN = '';
+const CONFIG = window.STAYFINDER_CONFIG || { MAPBOX_TOKEN: '', API_BASE: '/api/chat' };
+const MAPBOX_TOKEN = CONFIG.MAPBOX_TOKEN || '';
+const API_BASE = CONFIG.API_BASE || '/api/chat';
 
 // ── State ────────────────────────────────────────────────────────
 const state = {
-  prefs: {},             // user's travel preferences collected from chat
+  prefs: {},              // user's travel preferences collected from chat
   isTyping: false,
   messageCount: 0,
-  conversationHistory: [], // the full chat log sent to Claude each time
+  conversationHistory: [], // full Anthropic-format message log sent each turn
+  pendingToolResults: [],  // tool_result blocks owed before the next user turn
+  backendReachable: null,  // null = unknown, true/false once checked
+  listening: false,        // mic active
+  speakingBtn: null,       // currently-speaking read-aloud button, if any
   demoCity: null,
-  currentListings: [],   // Array of listing objects from latest search
-  compareList: [],       // Up to 3 listing IDs the user selected for comparison
-  map: null,             // Mapbox map instance
+  currentListings: [],    // Array of listing objects from latest search
+  compareList: [],        // Up to 3 listing IDs the user selected for comparison
+  map: null,               // Mapbox map instance
   mapOpen: false,
-  markers: [],           // Pins active map markers objects
+  markers: [],             // active map marker objects
 };
 
-// ================================================================
-// PHASE 3 — SAVED SEARCHES  &  SHARE LINK
-// ================================================================
+// ── DOM / escaping helpers ──────────────────────────────────────
+const $ = id => document.getElementById(id);
+const messages = $('messages');
+function show(id) { $(id).style.display = ''; }
+function hide(id) { $(id).style.display = 'none'; }
 
-// ── Storage key ─────────────────────────────────────────────────
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str === null || str === undefined ? '' : String(str);
+  return div.innerHTML;
+}
+
+// Only allow http(s) URLs through as href values — blocks javascript: etc.
+function safeUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url, location.origin);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+  } catch { return ''; }
+}
+
+// ================================================================
+// SAVED SEARCHES  &  SHARE LINK
+// ================================================================
 const SAVED_SEARCHES_KEY = 'sf_saved_searches';
 
-// ── Saved Searches ───────────────────────────────────────────────
 function getSavedSearches() {
   try { return JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || '[]'); }
   catch { return []; }
@@ -41,7 +65,6 @@ function saveCurrentSearch() {
   const destination = prefs.destination || state.demoCity || 'Unknown';
   const searches = getSavedSearches();
 
-  // Avoid exact duplicates (same destination + budget)
   const isDupe = searches.some(s =>
     s.destination === destination &&
     s.budget_max  === prefs.budget_max
@@ -57,9 +80,8 @@ function saveCurrentSearch() {
     label:       buildSearchLabel(prefs, state.demoCity),
   };
 
-  searches.unshift(entry);         // newest first
-  
-  if (searches.length > 10) searches.pop(); // cap at 10
+  searches.unshift(entry);
+  if (searches.length > 10) searches.pop();
   localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(searches));
   renderSavedSearches();
   showToast('Search saved! ✓');
@@ -72,14 +94,11 @@ function deleteSavedSearch(id) {
 }
 
 function loadSavedSearch(entry) {
-  // Restore state
   state.prefs    = { ...entry.prefs };
   state.demoCity = entry.demoCity || entry.destination;
 
-  // Trigger sidebar update
-  updatePreferences(JSON.stringify(entry.prefs));
+  updatePreferences(entry.prefs);
 
-  // Prompt the AI (or demo) to re-run the search
   closeSidebar();
   $('chat-input').value =
     `Find me the best options in ${entry.destination} based on my saved preferences`;
@@ -107,43 +126,40 @@ function renderSavedSearches() {
   }
 
   parent.style.display = '';
-  container.innerHTML = list.map(entry => {
+  container.innerHTML = list.map((entry, i) => {
     const date = new Date(entry.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `
       <div class="saved-search-item" title="Reload this search">
-        <div class="saved-search-main" onclick="loadSavedSearch(${JSON.stringify(entry).replace(/"/g, '&quot;')})">
-          <div class="saved-search-label">${entry.label}</div>
-          <div class="saved-search-date">${date}</div>
+        <div class="saved-search-main" data-saved-index="${i}">
+          <div class="saved-search-label">${escapeHtml(entry.label)}</div>
+          <div class="saved-search-date">${escapeHtml(date)}</div>
         </div>
-        <button class="saved-search-del" onclick="deleteSavedSearch(${entry.id})" title="Remove">✕</button>
+        <button class="saved-search-del" data-del-id="${entry.id}" title="Remove">✕</button>
       </div>`;
   }).join('');
+
+  // Listeners instead of inline JSON in onclick attributes (avoids HTML-attribute injection)
+  container.querySelectorAll('[data-saved-index]').forEach(el => {
+    el.addEventListener('click', () => loadSavedSearch(list[Number(el.dataset.savedIndex)]));
+  });
+  container.querySelectorAll('[data-del-id]').forEach(el => {
+    el.addEventListener('click', () => deleteSavedSearch(Number(el.dataset.delId)));
+  });
 }
 
-// ── Share Link ───────────────────────────────────────────────────
 function shareSearch() {
   const prefs = state.prefs;
-  
   if (!prefs.destination && !state.demoCity) {
     showToast('Start a search first to share it.');
     return;
   }
 
-  const payload = {
-    ...prefs,
-    destination: prefs.destination || state.demoCity,
-  };
-
-  // Encode preferences into URL param
+  const payload = { ...prefs, destination: prefs.destination || state.demoCity };
   const encoded  = btoa(encodeURIComponent(JSON.stringify(payload)));
   const shareUrl = `${location.origin}${location.pathname}?search=${encoded}`;
 
-  // Copy to clipboard
   if (navigator.clipboard?.writeText) {
-    
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      showShareToast(shareUrl);
-    }).catch(() => fallbackCopy(shareUrl));
+    navigator.clipboard.writeText(shareUrl).then(() => showShareToast(shareUrl)).catch(() => fallbackCopy(shareUrl));
   } else {
     fallbackCopy(shareUrl);
   }
@@ -159,7 +175,6 @@ function fallbackCopy(text) {
 }
 
 function showShareToast(url) {
-  // Remove any existing share toast
   document.getElementById('share-toast')?.remove();
 
   const t = document.createElement('div');
@@ -177,17 +192,17 @@ function showShareToast(url) {
     </div>
     <div style="font-size:11px;color:var(--cream-faint);word-break:break-all;line-height:1.5;
       background:rgba(255,255,255,0.05);padding:8px 10px;border-radius:6px;">
-      ${url.length > 80 ? url.slice(0, 80) + '…' : url}
+      ${escapeHtml(url.length > 80 ? url.slice(0, 80) + '…' : url)}
     </div>
-    <button onclick="this.closest('#share-toast').remove()"
+    <button id="share-toast-dismiss"
       style="margin-top:10px;width:100%;background:none;border:1px solid rgba(200,151,42,0.25);
       color:var(--cream-dim);padding:6px;border-radius:6px;font-family:var(--font-body);
       font-size:12px;cursor:pointer;">Dismiss</button>`;
   document.body.appendChild(t);
+  t.querySelector('#share-toast-dismiss').addEventListener('click', () => t.remove());
   setTimeout(() => t?.remove(), 6000);
 }
 
-// ── Read shared URL on load ──────────────────────────────────────
 function readSharedUrl() {
   const params = new URLSearchParams(location.search);
   const encoded = params.get('search');
@@ -195,50 +210,22 @@ function readSharedUrl() {
 
   try {
     const prefs = JSON.parse(decodeURIComponent(atob(encoded)));
-    // Restore
     state.prefs    = prefs;
     state.demoCity = prefs.destination || null;
-    updatePreferences(JSON.stringify(prefs));
+    updatePreferences(prefs);
 
-    // Auto-trigger search after a tick
     setTimeout(() => {
       $('chat-input').value =
         `Find me the best options in ${prefs.destination || 'my destination'} based on the shared preferences`;
       sendMessage();
     }, 600);
 
-    // Clean URL without reload
     history.replaceState(null, '', location.pathname);
     showToast('🔗 Shared search loaded!');
   } catch {
     // Malformed param — silently ignore
   }
 }
-
-// ── System prompt ────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are StayFinder AI — a warm, expert travel assistant that helps users find the perfect Airbnb space or hotel.
-
-Gather preferences conversationally: destination, dates, guests, budget, type (Airbnb/hotel/both), transport needs, activities, amenities, vibe.
-
-Ask 1-2 questions per turn. Once you have destination + guests + budget, search.
-
-When presenting listings, format each one EXACTLY like this so the UI can parse them:
-<LISTING>
-{"id":"l1","title":"Property Name","location":"Neighborhood, City","lat":25.7617,"lng":-80.1918,"price":162,"rating":4.94,"reviews":203,"type":"airbnb","amenities":["Pool","Wifi","Kitchen"],"tags":["Superhost","Great location"],"tagColors":["amber","gold"]}
-</LISTING>
-
-Always include realistic lat/lng coordinates near the searched city. Include 3-5 listings.
-
-After each message also include:
-<PREFERENCES>
-{"destination":"Miami Beach, FL","num_guests":2,"budget_min":120,"budget_max":220,"accommodation_type":"airbnb","amenities":["pool","wifi"],"activities":["beach","nightlife"]}
-</PREFERENCES>`;
-
-// ── DOM helpers ──────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const messages = $('messages');
-function show(id) { $(id).style.display = ''; }
-function hide(id) { $(id).style.display = 'none'; }
 
 // ── Mobile sidebar ───────────────────────────────────────────────
 function openSidebar()  { $('sidebar').classList.add('open');  $('sidebar-overlay').classList.add('active');  document.body.style.overflow = 'hidden'; }
@@ -248,14 +235,13 @@ function closeSidebar() { $('sidebar').classList.remove('open'); $('sidebar-over
 // MAP
 // ================================================================
 function initMap(city, listings) {
-  if (!MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_TOKEN_HERE') {
+  if (!MAPBOX_TOKEN) {
     showMapPlaceholder(city, listings);
     return;
   }
 
   mapboxgl.accessToken = MAPBOX_TOKEN;
 
-  // Clear existing map
   if (state.map) { state.map.remove(); state.map = null; }
   state.markers.forEach(m => m.remove());
   state.markers = [];
@@ -275,19 +261,17 @@ function initMap(city, listings) {
   state.map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
   state.map.on('load', () => {
-    listings.forEach((listing, i) => {
-      // Custom marker element
+    listings.forEach((listing) => {
       const el = document.createElement('button');
       el.className = 'map-marker';
       el.textContent = `$${listing.price}`;
       el.setAttribute('data-id', listing.id);
 
-      // Popup
       const popup = new mapboxgl.Popup({ offset: 25, closeButton: true })
         .setHTML(`
-          <div class="map-popup-title">${listing.title}</div>
-          <div class="map-popup-price">$${listing.price}/night</div>
-          <div class="map-popup-rating">★ ${listing.rating} · ${listing.reviews} reviews</div>
+          <div class="map-popup-title">${escapeHtml(listing.title)}</div>
+          <div class="map-popup-price">$${Number(listing.price) || '?'}/night</div>
+          <div class="map-popup-rating">★ ${Number(listing.rating) || '—'} · ${Number(listing.reviews) || 0} reviews</div>
         `);
 
       const marker = new mapboxgl.Marker(el)
@@ -295,7 +279,6 @@ function initMap(city, listings) {
         .setPopup(popup)
         .addTo(state.map);
 
-      // Highlight card on marker click
       el.addEventListener('click', () => {
         highlightListingCard(listing.id);
         document.querySelectorAll('.map-marker').forEach(m => m.classList.remove('active'));
@@ -305,7 +288,6 @@ function initMap(city, listings) {
       state.markers.push(marker);
     });
 
-    // Fit all markers in view
     if (listings.length > 1) {
       const bounds = listings.reduce((b, l) =>
         b.extend([l.lng, l.lat]),
@@ -319,33 +301,34 @@ function initMap(city, listings) {
 }
 
 function showMapPlaceholder(city, listings) {
-  // No Mapbox token — show a nice placeholder with listing list
   const container = $('mapbox-container');
   container.style.overflow = 'auto';
   container.innerHTML = `
     <div style="padding:20px;">
       <div style="background:rgba(200,151,42,0.1);border:1px solid rgba(200,151,42,0.25);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--cream-dim);">
-        <div style="color:var(--gold-light);font-weight:500;margin-bottom:4px;">Add your Mapbox token to see the map</div>
-        Sign up free at <a href="https://mapbox.com" style="color:var(--teal-light);" target="_blank">mapbox.com</a>, copy your public token, and paste it at the top of main.js where it says <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;">MAPBOX_TOKEN</code>.
+        <div style="color:var(--gold-light);font-weight:500;margin-bottom:4px;">Add a Mapbox token to see the map</div>
+        Sign up free at <a href="https://mapbox.com" style="color:var(--teal-light);" target="_blank" rel="noopener noreferrer">mapbox.com</a>, copy your public token, URL-restrict it to your domain, then put it in <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;">config.local.js</code> (copy from <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;">config.example.js</code>).
       </div>
-      <div style="font-size:11px;color:var(--cream-faint);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px;">Listings near ${city || 'your destination'}</div>
-      ${listings.map((l, i) => `
-        <div onclick="highlightListingCard('${l.id}')" style="background:var(--driftwood);border:1px solid rgba(200,151,42,0.15);border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor='rgba(200,151,42,0.4)'" onmouseout="this.style.borderColor='rgba(200,151,42,0.15)'">
+      <div style="font-size:11px;color:var(--cream-faint);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px;">Listings near ${escapeHtml(city || 'your destination')}</div>
+      ${listings.map((l) => `
+        <div class="map-placeholder-item" data-listing-id="${escapeHtml(l.id)}" style="background:var(--driftwood);border:1px solid rgba(200,151,42,0.15);border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div style="font-family:var(--font-display);font-size:15px;color:var(--cream);font-weight:500;">${l.title}</div>
-            <div style="font-size:14px;color:var(--gold-light);white-space:nowrap;margin-left:8px;">$${l.price}<span style="font-size:10px;color:var(--cream-faint)">/night</span></div>
+            <div style="font-family:var(--font-display);font-size:15px;color:var(--cream);font-weight:500;">${escapeHtml(l.title)}</div>
+            <div style="font-size:14px;color:var(--gold-light);white-space:nowrap;margin-left:8px;">$${Number(l.price) || '?'}<span style="font-size:10px;color:var(--cream-faint)">/night</span></div>
           </div>
-          <div style="font-size:12px;color:var(--cream-dim);margin-top:3px;">📍 ${l.location}</div>
-          <div style="font-size:12px;color:var(--gold);margin-top:2px;">★ ${l.rating} · ${l.reviews} reviews</div>
+          <div style="font-size:12px;color:var(--cream-dim);margin-top:3px;">📍 ${escapeHtml(l.location)}</div>
+          <div style="font-size:12px;color:var(--gold);margin-top:2px;">★ ${Number(l.rating) || '—'} · ${Number(l.reviews) || 0} reviews</div>
         </div>`).join('')}
     </div>`;
+  container.querySelectorAll('[data-listing-id]').forEach(el => {
+    el.addEventListener('click', () => highlightListingCard(el.dataset.listingId));
+    el.addEventListener('mouseover', () => el.style.borderColor = 'rgba(200,151,42,0.4)');
+    el.addEventListener('mouseout',  () => el.style.borderColor = 'rgba(200,151,42,0.15)');
+  });
   $('map-count').textContent = `${listings.length} listings`;
 }
 
-function toggleMap() {
-  if (state.mapOpen) hideMap();
-  else showMap();
-}
+function toggleMap() { if (state.mapOpen) hideMap(); else showMap(); }
 
 function showMap() {
   state.mapOpen = true;
@@ -361,8 +344,7 @@ function hideMap() {
 }
 
 function highlightListingCard(id) {
-  // Scroll to and briefly highlight the listing card in chat
-  const card = document.querySelector(`[data-listing-id="${id}"]`);
+  const card = document.querySelector(`[data-listing-id="${CSS.escape(String(id))}"]`);
   if (card) {
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     card.style.borderColor = 'rgba(200,151,42,0.8)';
@@ -376,8 +358,7 @@ function highlightListingCard(id) {
 function toggleCompare(id, checked) {
   if (checked) {
     if (state.compareList.length >= 3) {
-      // Uncheck the checkbox
-      const cb = document.querySelector(`#compare-cb-${id}`);
+      const cb = document.querySelector(`#compare-cb-${CSS.escape(String(id))}`);
       if (cb) cb.checked = false;
       showToast('You can compare up to 3 listings at a time.');
       return;
@@ -404,12 +385,8 @@ function updateCompareBar() {
 
   const count = state.compareList.length;
   $('compare-bar-count').textContent = count;
-
-  if (count >= 2) {
-    bar.classList.add('visible');
-  } else {
-    bar.classList.remove('visible');
-  }
+  if (count >= 2) bar.classList.add('visible');
+  else bar.classList.remove('visible');
 }
 
 function clearCompare() {
@@ -424,24 +401,23 @@ function openCompare() {
   if (selected.length < 2) return;
 
   const rows = [
-    { label: 'Price / night', key: l => `<span class="compare-price">$${l.price}<span>/night</span></span>` },
-    { label: 'Rating',        key: l => `<span class="compare-rating">★ ${l.rating}</span> <span style="font-size:12px;color:var(--cream-faint)">${l.reviews} reviews</span>` },
+    { label: 'Price / night', key: l => `<span class="compare-price">$${Number(l.price) || '?'}<span>/night</span></span>` },
+    { label: 'Rating',        key: l => `<span class="compare-rating">★ ${Number(l.rating) || '—'}</span> <span style="font-size:12px;color:var(--cream-faint)">${Number(l.reviews) || 0} reviews</span>` },
     { label: 'Type',          key: l => l.type === 'airbnb' ? '🏠 Airbnb' : '🏨 Hotel' },
-    { label: 'Location',      key: l => l.location },
-    { label: 'Amenities',     key: l => `<div class="compare-tags">${(l.amenities||[]).map(a => `<span class="tag tag-green">${a}</span>`).join('')}</div>` },
-    { label: 'Highlights',    key: l => `<div class="compare-tags">${(l.tags||[]).map((t,i) => `<span class="tag tag-${(l.tagColors||[])[i]||'gold'}">${t}</span>`).join('')}</div>` },
+    { label: 'Location',      key: l => escapeHtml(l.location) },
+    { label: 'Amenities',     key: l => `<div class="compare-tags">${(l.amenities||[]).map(a => `<span class="tag tag-green">${escapeHtml(a)}</span>`).join('')}</div>` },
+    { label: 'Highlights',    key: l => `<div class="compare-tags">${(l.tags||[]).map((t,i) => `<span class="tag tag-${(l.tagColors||[])[i]||'gold'}">${escapeHtml(t)}</span>`).join('')}</div>` },
   ];
 
-  // Find best price (lowest) and best rating
-  const bestPrice  = Math.min(...selected.map(l => l.price));
-  const bestRating = Math.max(...selected.map(l => l.rating));
+  const bestPrice  = Math.min(...selected.map(l => Number(l.price) || Infinity));
+  const bestRating = Math.max(...selected.map(l => Number(l.rating) || 0));
 
   const html = `
     <table class="compare-table">
       <thead>
         <tr>
           <th></th>
-          ${selected.map(l => `<th class="listing-col">${l.title}</th>`).join('')}
+          ${selected.map(l => `<th class="listing-col">${escapeHtml(l.title)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
@@ -450,10 +426,9 @@ function openCompare() {
             <td>${row.label}</td>
             ${selected.map(l => {
               let cell = row.key(l);
-              // Add "best value" / "top rated" badge
-              if (row.label === 'Price / night' && l.price === bestPrice)
+              if (row.label === 'Price / night' && Number(l.price) === bestPrice)
                 cell += `<div class="compare-win">Best price</div>`;
-              if (row.label === 'Rating' && l.rating === bestRating)
+              if (row.label === 'Rating' && Number(l.rating) === bestRating)
                 cell += `<div class="compare-win">Top rated</div>`;
               return `<td>${cell}</td>`;
             }).join('')}
@@ -482,38 +457,49 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
-// ── Listing parsing ──────────────────────────────────────────────
-function parseListings(text) {
-  const listings = [];
-  const regex = /<LISTING>([\s\S]*?)<\/LISTING>/g;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    try {
-      listings.push(JSON.parse(match[1].trim()));
-    } catch {}
+// ── Honest booking deep links (we don't book — we point to real search results) ──
+function bookingUrl(kind, listing) {
+  const dest = encodeURIComponent(listing.location || state.prefs.destination || state.demoCity || '');
+  const guests = state.prefs.num_guests || 1;
+  if (kind === 'airbnb') {
+    let url = `https://www.airbnb.com/s/${dest}/homes?adults=${guests}`;
+    if (state.prefs.check_in)  url += `&checkin=${encodeURIComponent(state.prefs.check_in)}`;
+    if (state.prefs.check_out) url += `&checkout=${encodeURIComponent(state.prefs.check_out)}`;
+    return url;
   }
-  return listings;
+  let url = `https://www.booking.com/searchresults.html?ss=${dest}&group_adults=${guests}`;
+  if (state.prefs.check_in)  url += `&checkin=${encodeURIComponent(state.prefs.check_in)}`;
+  if (state.prefs.check_out) url += `&checkout=${encodeURIComponent(state.prefs.check_out)}`;
+  return url;
 }
 
 // ── Build listing card HTML ──────────────────────────────────────
 function buildListingCard(listing) {
   const tagHtml = (listing.tags || []).map((t, i) => {
     const color = (listing.tagColors || [])[i] || 'gold';
-    return `<span class="tag tag-${color}">${t}</span>`;
+    return `<span class="tag tag-${color}">${escapeHtml(t)}</span>`;
   }).join('');
 
+  const directUrl = safeUrl(listing.url);
+  const id = escapeHtml(listing.id);
+
   return `
-    <div class="listing-card" data-listing-id="${listing.id}">
+    <div class="listing-card" data-listing-id="${id}">
       <label class="listing-compare-check">
-        <input type="checkbox" id="compare-cb-${listing.id}" onchange="toggleCompare('${listing.id}', this.checked)"> Compare
+        <input type="checkbox" id="compare-cb-${id}" onchange="toggleCompare('${id}', this.checked)"> Compare
       </label>
       <div class="listing-card-header">
-        <div class="listing-title">${listing.title}</div>
-        <div class="listing-price">$${listing.price} <span>/ night</span></div>
+        <div class="listing-title">${escapeHtml(listing.title)}</div>
+        <div class="listing-price">$${Number(listing.price) || '?'} <span>/ night</span></div>
       </div>
-      <div class="listing-location">📍 ${listing.location}</div>
-      <div class="listing-rating">★ ${listing.rating} · ${listing.reviews} reviews</div>
+      <div class="listing-location">📍 ${escapeHtml(listing.location)}</div>
+      <div class="listing-rating">${listing.rating ? `★ ${Number(listing.rating)} · ${Number(listing.reviews) || 0} reviews` : ''}</div>
       <div class="listing-tags">${tagHtml}</div>
+      <div class="listing-links">
+        ${directUrl ? `<a class="listing-link-btn" href="${directUrl}" target="_blank" rel="noopener noreferrer">🔗 View Listing</a>` : ''}
+        <a class="listing-link-btn" href="${escapeHtml(bookingUrl('airbnb', listing))}" target="_blank" rel="noopener noreferrer">Search Airbnb</a>
+        <a class="listing-link-btn" href="${escapeHtml(bookingUrl('booking', listing))}" target="_blank" rel="noopener noreferrer">Search Booking.com</a>
+      </div>
     </div>`;
 }
 
@@ -538,6 +524,20 @@ function addMessage(role, content, isHtml = false) {
 
   wrap.appendChild(avatar);
   wrap.appendChild(bubble);
+
+  if (role === 'assistant' && 'speechSynthesis' in window) {
+    const plainText = bubble.textContent.trim();
+    if (plainText) {
+      const readBtn = document.createElement('button');
+      readBtn.className = 'read-aloud-btn';
+      readBtn.title = 'Read aloud';
+      readBtn.setAttribute('aria-label', 'Read message aloud');
+      readBtn.textContent = '🔊';
+      readBtn.addEventListener('click', () => toggleReadAloud(readBtn, plainText));
+      wrap.appendChild(readBtn);
+    }
+  }
+
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
   state.messageCount++;
@@ -545,13 +545,20 @@ function addMessage(role, content, isHtml = false) {
 }
 
 function formatText(text) {
-  text = text.replace(/<PREFERENCES>[\s\S]*?<\/PREFERENCES>/g, '').trim();
-  text = text.replace(/<LISTING>[\s\S]*?<\/LISTING>/g, '').trim();
-  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  text = text.replace(/\n\n/g, '</p><p>');
-  text = text.replace(/\n/g, '<br>');
-  return `<p>${text}</p>`;
+  let safe = escapeHtml(text);
+  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  safe = safe.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  safe = safe.replace(/\n\n/g, '</p><p>');
+  safe = safe.replace(/\n/g, '<br>');
+  return `<p>${safe}</p>`;
+}
+
+function buildAssistantBubbleHtml(text, listings) {
+  let html = formatText(text || "Here's what I found.");
+  if (listings && listings.length) {
+    html += listings.map(l => buildListingCard(l)).join('');
+  }
+  return html;
 }
 
 // ── Typing / search progress ──────────────────────────────────────
@@ -580,7 +587,7 @@ function showSearchProgress(city) {
   const box = document.createElement('div');
   box.className = 'search-progress';
   box.innerHTML = `
-    <div class="search-progress-label">Searching ${city ? `in ${city}` : 'for stays'}…</div>
+    <div class="search-progress-label">Searching ${city ? `in ${escapeHtml(city)}` : 'for stays'}…</div>
     <div class="search-steps">
       ${SEARCH_STEPS.map((s,i) => `<div class="search-step" id="sstep-${i}"><span class="step-dot"></span><span class="step-check">✓</span>${s}</div>`).join('')}
     </div>`;
@@ -606,8 +613,8 @@ function removeSearchProgress() {
 }
 
 // ── Preference sidebar ───────────────────────────────────────────
-function updatePreferences(jsonStr) {
-  let data; try { data = JSON.parse(jsonStr); } catch { return; }
+function updatePreferences(data) {
+  if (!data || typeof data !== 'object') return;
   Object.assign(state.prefs, data);
   const p = state.prefs;
 
@@ -641,7 +648,10 @@ function updatePreferences(jsonStr) {
   const al=[...(p.amenities||[])]; if(p.pet_friendly) al.push('pet-friendly'); if(p.accessible) al.push('accessible');
   if (al.length) { renderTags('pref-amenities',al,'tag-green'); show('sec-amenities'); }
   show('div-3');
-  if (p.destination && p.num_guests) { show('search-btn'); $('api-notice').style.display='block'; }
+  if (p.destination && p.num_guests) {
+    show('search-btn');
+    $('api-notice').style.display = state.backendReachable ? 'block' : 'none';
+  }
 }
 
 function renderTags(containerId, items, cls) {
@@ -655,70 +665,131 @@ function renderTags(containerId, items, cls) {
   });
 }
 
-function extractPreferences(text) {
-  const match = text.match(/<PREFERENCES>([\s\S]*?)<\/PREFERENCES>/);
-  if (match) updatePreferences(match[1].trim());
-}
-
-// ── API call ─────────────────────────────────────────────────────
-async function callClaude(userMessage) {
-  state.conversationHistory.push({ role: 'user', content: userMessage });
-  const apiKey = getApiKey();
-  if (!apiKey) return simulateResponse(userMessage);
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5',
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: state.conversationHistory,
-    }),
+// ── Suggested reply chips ────────────────────────────────────────
+function renderChips(options) {
+  const row = $('chips-row');
+  if (!row) return;
+  row.innerHTML = (options || []).map((o, i) =>
+    `<button class="reply-chip" data-chip-index="${i}">${escapeHtml(o)}</button>`
+  ).join('');
+  row.querySelectorAll('[data-chip-index]').forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      $('chat-input').value = options[i];
+      sendMessage();
+    });
   });
+}
+function clearChips() { const row = $('chips-row'); if (row) row.innerHTML = ''; }
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${response.status}`);
+// ── Voice input (Web Speech API) ─────────────────────────────────
+function toggleVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = $('mic-btn');
+  if (!SR) { showToast('Voice input is not supported in this browser.'); return; }
+
+  if (state.listening) {
+    state._recognition?.stop();
+    return;
   }
 
-  const data = await response.json();
-  const fullText = data.content.filter(b => b.type==='text').map(b => b.text).join('');
-  state.conversationHistory.push({ role: 'assistant', content: fullText });
-  extractPreferences(fullText);
+  const recognition = new SR();
+  state._recognition = recognition;
+  recognition.lang = navigator.language || 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
 
-  // Parse and register any listings
-  const listings = parseListings(fullText);
-  if (listings.length) registerListings(listings, state.demoCity || state.prefs.destination);
+  recognition.onstart = () => { state.listening = true; btn.classList.add('listening'); };
+  recognition.onerror = () => { state.listening = false; btn.classList.remove('listening'); };
+  recognition.onend   = () => { state.listening = false; btn.classList.remove('listening'); };
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    const input = $('chat-input');
+    input.value = (input.value ? input.value + ' ' : '') + text;
+    autoResize(input);
+  };
 
-  return fullText.replace(/<PREFERENCES>[\s\S]*?<\/PREFERENCES>/g,'').replace(/<LISTING>[\s\S]*?<\/LISTING>/g,'').trim();
+  try { recognition.start(); } catch { /* already started */ }
 }
 
-function getApiKey() { return localStorage.getItem('sf_api_key') || null; }
+// ── Read-aloud (SpeechSynthesis) ─────────────────────────────────
+function toggleReadAloud(btn, text) {
+  if (!('speechSynthesis' in window)) return;
+
+  if (state.speakingBtn === btn) {
+    speechSynthesis.cancel();
+    state.speakingBtn = null;
+    btn.classList.remove('speaking');
+    return;
+  }
+
+  speechSynthesis.cancel();
+  if (state.speakingBtn) state.speakingBtn.classList.remove('speaking');
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.onend = () => { btn.classList.remove('speaking'); state.speakingBtn = null; };
+  state.speakingBtn = btn;
+  btn.classList.add('speaking');
+  speechSynthesis.speak(utter);
+}
+
+// ================================================================
+// BACKEND — secure proxy call + tool-use handling
+// ================================================================
+async function callBackend() {
+  const res = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: state.conversationHistory }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Backend error ${res.status}`);
+  }
+
+  const data = await res.json();
+  const blocks = Array.isArray(data.content) ? data.content : [];
+
+  let text = '';
+  let listings = null;
+
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      text += block.text;
+    } else if (block.type === 'tool_use') {
+      if (block.name === 'present_listings' && Array.isArray(block.input?.listings)) {
+        listings = block.input.listings;
+        registerListings(listings, state.prefs.destination || state.demoCity);
+      } else if (block.name === 'update_preferences') {
+        updatePreferences(block.input || {});
+      } else if (block.name === 'suggest_replies' && Array.isArray(block.input?.options)) {
+        renderChips(block.input.options);
+      }
+      // Client tools need an acknowledgment before the next user turn, or the
+      // next API call is rejected — queue it, sent alongside the human's next message.
+      state.pendingToolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'ok' });
+    }
+    // server_tool_use / web_search_tool_result blocks: Anthropic already resolved
+    // these server-side; no client action needed beyond keeping them in history below.
+  }
+
+  // Record the assistant turn exactly as returned so tool_use ids stay valid.
+  state.conversationHistory.push({ role: 'assistant', content: blocks });
+
+  return { text: text.trim(), listings };
+}
 
 // ── Register listings (map + compare state) ───────────────────────
 function registerListings(listings, city) {
   state.currentListings = listings;
   state.compareList     = [];
-
-  // Show map button
   $('map-toggle-btn').style.display = '';
-
-  // Init / refresh map
   initMap(city || '', listings);
-
-  // Show map automatically on first search
   if (!state.mapOpen) showMap();
 }
 
 // ================================================================
-// EXPANDED DEMO MODE  (same city detection as Phase 1)
+// DEMO MODE — offline fallback when the backend is unreachable
 // ================================================================
 const CITY_ALIASES = {
   'nyc':'New York City, NY','new york':'New York City, NY',
@@ -755,9 +826,7 @@ const CITY_COORDS = {
   'Tokyo, Japan':       [139.69, 35.69],
 };
 
-function getCityCoords(city) {
-  return CITY_COORDS[city] || [-74.00, 40.71];
-}
+function getCityCoords(city) { return CITY_COORDS[city] || [-74.00, 40.71]; }
 
 function detectCity(msg) {
   const lower = msg.toLowerCase();
@@ -795,15 +864,13 @@ function detectAmenities(msg) {
   return found;
 }
 
-// Generate demo listings with proper lat/lng
 function generateDemoListings(city, budget, type) {
   const coords = getCityCoords(city) || [-74, 40.71];
   const shortCity = (city||'the area').split(',')[0];
   const min  = budget?.min  || 100;
   const max  = budget?.max  || 200;
   const isAirbnb = !type || type === 'airbnb' || type === 'both';
-
-  const spread = 0.02; // lat/lng jitter for markers
+  const spread = 0.02;
 
   return [
     { id:'l1', title:`${shortCity} ${isAirbnb?'Cozy Studio':'Boutique Hotel'} — Central`,
@@ -844,16 +911,16 @@ async function simulateResponse(msg) {
   const currentBudget = state.prefs.budget_min ? {min:state.prefs.budget_min,max:state.prefs.budget_max} : null;
   const currentType   = state.prefs.accommodation_type;
 
-  const prefJson = JSON.stringify({
+  const prefUpdate = {
     ...(currentCity   && {destination:currentCity}),
     ...(currentGuests && {num_guests:currentGuests}),
     ...(currentBudget && {budget_min:currentBudget.min,budget_max:currentBudget.max}),
     ...(currentType   && {accommodation_type:currentType}),
     ...(amenities.length && {amenities}),
-  });
-  if (Object.keys(JSON.parse(prefJson)).length > 0) setTimeout(()=>updatePreferences(prefJson), 200);
+  };
+  if (Object.keys(prefUpdate).length > 0) setTimeout(() => updatePreferences(prefUpdate), 200);
 
-  if (!currentCity) return `Welcome to **StayFinder AI**! 🌍\n\nWhere are you headed? Tell me the destination and we'll find the perfect stay.`;
+  if (!currentCity) return `Welcome to **StayFinder AI** — running in demo mode right now (no backend reachable). 🌍\n\nWhere are you headed? Tell me the destination and we'll find the perfect stay.`;
 
   const shortCity = currentCity.split(',')[0];
   if (!currentGuests) return `**${currentCity}** — great choice! ${getCityBlurb(shortCity)}\n\nHow many guests will be staying, and do you have travel dates in mind?`;
@@ -863,7 +930,6 @@ async function simulateResponse(msg) {
     return `$${currentBudget.min}–$${currentBudget.max}/night in ${shortCity} gives us solid options.\n\nAny must-haves? Pool, kitchen, parking, pet-friendly? Or say **"find me something"** and I'll search now!`;
   }
 
-  // Show listings with search animation
   await new Promise(resolve => {
     showSearchProgress(shortCity);
     setTimeout(() => { removeSearchProgress(); resolve(); }, 3200);
@@ -873,7 +939,27 @@ async function simulateResponse(msg) {
   registerListings(listings, currentCity);
 
   const cardsHtml = listings.map(l => buildListingCard(l)).join('');
-  return `Here are the top matches for your stay in **${shortCity}** 🏡\n\nSelect up to 3 listings to compare side-by-side, or open the map to see locations.\n\n${cardsHtml}`;
+  return `Here are the top matches for your stay in **${shortCity}** 🏡 (demo data — connect the backend for real, live listings)\n\nSelect up to 3 listings to compare side-by-side, or open the map to see locations.\n\n${cardsHtml}`;
+}
+
+// ── Backend reachability check (for the honest "AI Concierge Active" badge) ──
+async function checkBackend() {
+  try {
+    const res = await fetch(API_BASE, { method: 'GET' });
+    // The proxy only accepts POST, so a deployed function replies 405/403 fast.
+    state.backendReachable = res.status === 405 || res.status === 403 || res.ok;
+  } catch {
+    state.backendReachable = false;
+  }
+  updateHeaderStatus();
+}
+
+function updateHeaderStatus() {
+  const wrap = document.querySelector('.header-status');
+  if (!wrap) return;
+  wrap.innerHTML = state.backendReachable
+    ? '<div class="status-dot"></div>AI Concierge Active'
+    : '<div class="status-dot" style="background:var(--cream-faint);animation:none;"></div>Demo Mode';
 }
 
 // ── Send message ─────────────────────────────────────────────────
@@ -885,25 +971,28 @@ async function sendMessage() {
   input.value = ''; input.style.height = 'auto';
   state.isTyping = true; $('send-btn').disabled = true;
   addMessage('user', text);
+  clearChips();
 
-  const hasEnough = state.demoCity && state.prefs.num_guests && state.prefs.budget_max;
-  const apiKey    = getApiKey();
+  const userBlocks = [...state.pendingToolResults, { type: 'text', text }];
+  state.pendingToolResults = [];
+  state.conversationHistory.push({ role: 'user', content: userBlocks });
 
-  if (apiKey) showSearchProgress(state.demoCity || '');
-  else if (!hasEnough || !state.prefs._askedAmenities) {
-    showTyping();
-    await new Promise(r => setTimeout(r, 600+Math.random()*400));
-    removeTyping();
-  }
+  const hasEnough = (state.prefs.destination || state.demoCity) && state.prefs.num_guests;
+  if (hasEnough) showSearchProgress(state.prefs.destination || state.demoCity || '');
+  else showTyping();
 
   try {
-    const reply = await callClaude(text);
+    const { text: replyText, listings } = await callBackend();
     removeTyping(); removeSearchProgress();
-    const isHtml = reply.includes('listing-card') || reply.includes('<div');
+    addMessage('assistant', buildAssistantBubbleHtml(replyText, listings), true);
+  } catch (err) {
+    removeTyping(); removeSearchProgress();
+    // Roll back the optimistic turn so a later successful call isn't corrupted.
+    state.conversationHistory.pop();
+    console.warn('Backend call failed, falling back to demo mode:', err.message);
+    const reply = await simulateResponse(text);
+    const isHtml = reply.includes('listing-card');
     addMessage('assistant', reply, isHtml);
-  } catch(err) {
-    removeTyping(); removeSearchProgress();
-    addMessage('assistant', `**Something went wrong:** ${err.message}\n\nCheck your API key or dismiss to use demo mode.`);
   }
 
   state.isTyping = false; $('send-btn').disabled = false; input.focus();
@@ -922,12 +1011,13 @@ function triggerSearch() {
 
 function resetChat() {
   if (!confirm('Start a new search?')) return;
-  state.prefs = {}; state.conversationHistory = []; state.messageCount = 0;
-  state.demoCity = null; state.currentListings = []; state.compareList = [];
+  state.prefs = {}; state.conversationHistory = []; state.pendingToolResults = [];
+  state.messageCount = 0; state.demoCity = null; state.currentListings = []; state.compareList = [];
   if (state.map) { state.map.remove(); state.map = null; }
   state.markers = []; hideMap();
   $('map-toggle-btn').style.display = 'none';
   const bar = $('compare-bar'); if(bar) bar.classList.remove('visible');
+  clearChips();
 
   messages.innerHTML = '';
   const welcome = document.createElement('div');
@@ -950,25 +1040,14 @@ function resetChat() {
 function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
 function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
 
-// ── API Key setup ────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  const key = localStorage.getItem('sf_api_key');
-  if (!key) {
-    const notice = document.createElement('div');
-    notice.style.cssText='position:fixed;bottom:80px;right:24px;background:var(--driftwood);border:1px solid rgba(200,151,42,0.3);border-radius:var(--radius);padding:14px 18px;z-index:100;max-width:290px;font-size:13px;color:var(--cream-dim);line-height:1.6;';
-    notice.innerHTML=`
-      <div style="font-weight:500;color:var(--gold-light);margin-bottom:6px;">Connect your API key</div>
-      <div style="margin-bottom:10px;">Add your Anthropic key for live AI search. Demo mode works without one.</div>
-      <input id="key-input" type="password" placeholder="sk-ant-..." style="width:100%;background:var(--bark);border:1px solid rgba(200,151,42,0.2);border-radius:6px;padding:7px 10px;color:var(--cream);font-family:var(--font-body);font-size:12px;outline:none;margin-bottom:8px;">
-      <div style="display:flex;gap:8px;">
-        <button onclick="saveKey()" style="flex:1;background:linear-gradient(135deg,var(--gold),var(--amber));border:none;color:var(--espresso);padding:7px;border-radius:6px;font-family:var(--font-body);font-size:12px;font-weight:500;cursor:pointer;">Save</button>
-        <button onclick="this.closest('div[style]').remove()" style="background:none;border:1px solid rgba(200,151,42,0.2);color:var(--cream-dim);padding:7px 12px;border-radius:6px;font-family:var(--font-body);font-size:12px;cursor:pointer;">Demo</button>
-      </div>`;
-    document.body.appendChild(notice);
+  renderSavedSearches();
+  readSharedUrl();
+  checkBackend();
+
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) {
+    const mic = $('mic-btn');
+    if (mic) { mic.disabled = true; mic.title = 'Voice input not supported in this browser'; }
   }
 });
-
-function saveKey() {
-  const val = $('key-input')?.value.trim();
-  if (val) { localStorage.setItem('sf_api_key',val); document.querySelector('#key-input')?.closest('div[style]')?.remove(); }
-}

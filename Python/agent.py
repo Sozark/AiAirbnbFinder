@@ -7,7 +7,7 @@ import json
 import re
 from typing import Generator
 import anthropic
-from Preferences import AccommodationPreferences
+from preferences import AccommodationPreferences
 
 
 SYSTEM_PROMPT = """You are StayFinder AI — a warm, expert travel assistant that helps users find the perfect Airbnb space or hotel. Your job is twofold:
@@ -105,7 +105,7 @@ class AccommodationAgent:
         full_response = ""
 
         with self.client.messages.stream(
-            model="claude-opus-4-5",
+            model="claude-opus-4-8",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=[
