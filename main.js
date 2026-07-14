@@ -843,9 +843,15 @@ function detectCity(msg) {
   return null;
 }
 function detectGuests(msg) {
+  const lower = msg.toLowerCase();
+  // Digits first — more explicit signal than a spelled-out number.
+  const m = lower.match(/(\d+)\s*(?:guest|person|people|adult)/);
+  if (m) return parseInt(m[1]);
+  // Word-boundary match, not substring — "one"/"two" as plain .includes() fired
+  // inside "honeymoon", "someone", "phone", silently reporting 1 guest for any of them.
   const numWords={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8};
-  for(const [w,n] of Object.entries(numWords)) if(msg.toLowerCase().includes(w)) return n;
-  const m=msg.match(/(\d+)\s*(?:guest|person|people|adult)/); return m?parseInt(m[1]):null;
+  for(const [w,n] of Object.entries(numWords)) if(new RegExp(`\\b${w}\\b`,'i').test(lower)) return n;
+  return null;
 }
 function detectBudget(msg) {
   const lower=msg.toLowerCase();
