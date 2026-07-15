@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "frontend-design@claude-code-plugins": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true,
+    "bencium-controlled-ux-designer@bencium-marketplace": true,
+    "accesslint@accesslint": true
+  }
+}
