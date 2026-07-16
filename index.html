@@ -3,10 +3,11 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>StayFinder AI</title>
   <meta name="description" content="An AI concierge that finds your perfect Airbnb or hotel through a simple conversation.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://api.mapbox.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <!-- Mapbox GL JS -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
@@ -23,18 +24,23 @@
 
 <body>
 
-<!-- Mobile sidebar backdrop -->
-<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+<a class="skip-link" href="#main-content">Skip to chat</a>
+
+<h1 class="sr-only">StayFinder AI — find your perfect place to stay</h1>
+
+<!-- Mobile sidebar backdrop (decorative click-catcher; Escape key and the
+     panel's own close button are the real keyboard/AT-accessible dismissals) -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()" aria-hidden="true"></div>
 
 <!-- Comparison modal backdrop -->
-<div class="compare-overlay" id="compare-overlay" onclick="closeCompare()"></div>
+<div class="compare-overlay" id="compare-overlay" onclick="closeCompare()" aria-hidden="true"></div>
 
 <!-- ── COMPARISON MODAL ── -->
-<div class="compare-modal" id="compare-modal">
+<div class="compare-modal" id="compare-modal" role="dialog" aria-modal="true" aria-labelledby="compare-title">
 
   <div class="compare-header">
-    <div class="compare-title">Side-by-Side Comparison</div>
-    <button class="compare-close" onclick="closeCompare()">✕</button>
+    <h2 class="compare-title" id="compare-title">Side-by-Side Comparison</h2>
+    <button class="compare-close" onclick="closeCompare()" aria-label="Close comparison">✕</button>
   </div>
 
   <div class="compare-body" id="compare-body">
@@ -43,17 +49,17 @@
 </div>
 
 <!-- ── MAP PANEL (slide-up overlay on mobile, right panel on desktop) ── -->
-<div class="map-panel" id="map-panel">
+<div class="map-panel" id="map-panel" role="dialog" aria-modal="true" aria-label="Map view">
 
   <div class="map-header">
 
     <!-- MAP TITLE -->
     <div class="map-title-row">
-      <span class="map-title">Map View</span>
+      <h2 class="map-title">Map View</h2>
       <span class="map-count" id="map-count"></span>
     </div>
 
-    <button class="map-close-btn" onclick="hideMap()">✕</button>
+    <button class="map-close-btn" onclick="hideMap()" aria-label="Close map">✕</button>
   </div>
 
   <div id="mapbox-container"></div>
@@ -78,36 +84,36 @@
 
     <div class="header-actions">
 
-      <button class="btn-ghost" onclick="saveCurrentSearch()" title="Save this search">🔖 Save</button>
-      <button class="btn-ghost" onclick="shareSearch()" title="Copy shareable link">🔗 Share</button>
+      <button class="btn-ghost" onclick="saveCurrentSearch()" title="Save this search"><span aria-hidden="true">🔖</span> Save</button>
+      <button class="btn-ghost" onclick="shareSearch()" title="Copy shareable link"><span aria-hidden="true">🔗</span> Share</button>
 
       <!-- Map toggle — appears after listings found -->
       <button class="btn-ghost map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()" style="display:none;">
-        🗺 Map
+        <span aria-hidden="true">🗺</span> Map
       </button>
 
-      <button class="sidebar-toggle" onclick="openSidebar()">✦ Preferences</button>
+      <button class="sidebar-toggle" onclick="openSidebar()"><span aria-hidden="true">✦</span> Preferences</button>
       <button class="btn-ghost" onclick="resetChat()">New Search</button>
     </div>
   </header>
 
   <!-- CHAT PANEL -->
-  <main class="chat-panel">
+  <main class="chat-panel" id="main-content">
     <div class="messages" id="messages" role="log" aria-live="polite" aria-atomic="false" aria-label="Conversation with StayFinder AI">
 
       <div class="welcome" id="welcome-screen">
 
         <div class="welcome-eyebrow">Powered by Claude AI</div>
-        <div class="welcome-title">Find your perfect<br><em>place to stay</em></div>
-        <div class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference. I point you to real listings; you always confirm price and book on the actual site.</div>
+        <p class="welcome-title">Find your perfect<br><em>place to stay</em></p>
+        <p class="welcome-sub">Tell me where you're headed and I'll find the best Airbnbs and hotels — matched to your budget, style, and every preference. I point you to real listings; you always confirm price and book on the actual site.</p>
 
         <!-- These prompts load when the user first opens the app -->
         <div class="quick-prompts">
-          <div class="quick-prompt" onclick="quickSend(this)">🌴 Beach trip for 2 in Miami</div>
-          <div class="quick-prompt" onclick="quickSend(this)">🏙️ NYC hotel under $200/night</div>
-          <div class="quick-prompt" onclick="quickSend(this)">🐾 Pet-friendly Airbnb in Portland</div>
-          <div class="quick-prompt" onclick="quickSend(this)">🎿 Ski cabin in Colorado, 6 guests</div>
-          <div class="quick-prompt" onclick="quickSend(this)">🌆 Business trip to Chicago, near transit</div>
+          <button type="button" class="quick-prompt" onclick="quickSend(this)">🌴 Beach trip for 2 in Miami</button>
+          <button type="button" class="quick-prompt" onclick="quickSend(this)">🏙️ NYC hotel under $200/night</button>
+          <button type="button" class="quick-prompt" onclick="quickSend(this)">🐾 Pet-friendly Airbnb in Portland</button>
+          <button type="button" class="quick-prompt" onclick="quickSend(this)">🎿 Ski cabin in Colorado, 6 guests</button>
+          <button type="button" class="quick-prompt" onclick="quickSend(this)">🌆 Business trip to Chicago, near transit</button>
         </div>
 
       </div>
@@ -130,6 +136,9 @@
           onkeydown="handleKey(event)"
           oninput="autoResize(this)"
           aria-label="Type your message"
+          enterkeyhint="send"
+          autocapitalize="sentences"
+          spellcheck="true"
         ></textarea>
 
         <button class="send-btn" id="send-btn" onclick="sendMessage()" aria-label="Send">
@@ -147,17 +156,17 @@
   </main>
 
   <!-- SIDEBAR -->
-  <aside class="sidebar" id="sidebar">
+  <aside class="sidebar" id="sidebar" aria-label="Your preferences">
 
     <div class="sidebar-header">
 
       <!-- Title of Sidebar -->
       <div class="sidebar-title-group">
-        <div class="sidebar-title">Your Preferences</div>
+        <h2 class="sidebar-title">Your Preferences</h2>
         <div class="sidebar-sub">Updates as we chat</div>
       </div>
 
-      <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+      <button class="sidebar-close" onclick="closeSidebar()" aria-label="Close preferences">✕</button>
     </div>
 
     <div class="sidebar-body">
@@ -259,7 +268,7 @@
         <div class="divider" id="div-3" style="display:none;"></div>
 
         <button class="search-btn" id="search-btn" style="display:none;" onclick="triggerSearch()">
-          🔍 Search Stays Now
+          <span aria-hidden="true">🔍</span> Search Stays Now
         </button>
 
       </div>
@@ -268,11 +277,11 @@
     <div class="sidebar-actions">
 
       <button class="sidebar-action-btn" onclick="saveCurrentSearch()">
-        <span>🔖</span> Save This Search
+        <span aria-hidden="true">🔖</span> Save This Search
       </button>
 
       <button class="sidebar-action-btn sidebar-action-share" onclick="shareSearch()">
-        <span>🔗</span> Share Search
+        <span aria-hidden="true">🔗</span> Share Search
       </button>
 
       </div>

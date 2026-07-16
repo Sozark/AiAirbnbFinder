@@ -129,12 +129,12 @@ function renderSavedSearches() {
   container.innerHTML = list.map((entry, i) => {
     const date = new Date(entry.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `
-      <div class="saved-search-item" title="Reload this search">
-        <div class="saved-search-main" data-saved-index="${i}">
+      <div class="saved-search-item">
+        <button type="button" class="saved-search-main" data-saved-index="${i}" aria-label="Reload search: ${escapeHtml(entry.label)}, saved ${escapeHtml(date)}">
           <div class="saved-search-label">${escapeHtml(entry.label)}</div>
           <div class="saved-search-date">${escapeHtml(date)}</div>
-        </div>
-        <button class="saved-search-del" data-del-id="${entry.id}" title="Remove">✕</button>
+        </button>
+        <button type="button" class="saved-search-del" data-del-id="${entry.id}" aria-label="Remove saved search: ${escapeHtml(entry.label)}">✕</button>
       </div>`;
   }).join('');
 
@@ -228,8 +228,46 @@ function readSharedUrl() {
 }
 
 // ── Mobile sidebar ───────────────────────────────────────────────
-function openSidebar()  { $('sidebar').classList.add('open');  $('sidebar-overlay').classList.add('active');  document.body.style.overflow = 'hidden'; }
-function closeSidebar() { $('sidebar').classList.remove('open'); $('sidebar-overlay').classList.remove('active'); document.body.style.overflow = ''; }
+// ── Focus management for overlay panels ──────────────────────────
+// Each panel remembers what had focus right before ITS OWN explicit open, so
+// closing it (Escape, close button, or backdrop) returns focus there instead
+// of losing it to <body>. Kept per-panel (not one shared variable) because
+// panels can be open simultaneously or in any order — e.g. the map can
+// auto-open after a search while the compare modal is already open.
+const focusReturn = { sidebar: null, map: null, compare: null };
+
+function trapTabKey(container, e) {
+  if (e.key !== 'Tab') return;
+  const focusable = container.querySelectorAll(
+    'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  );
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if ($('compare-modal').classList.contains('open')) { closeCompare(); }
+  else if (state.mapOpen)                            { hideMap(); }
+  else if ($('sidebar').classList.contains('open'))  { closeSidebar(); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if ($('compare-modal').classList.contains('open')) trapTabKey($('compare-modal'), e);
+});
+
+function openSidebar()  {
+  focusReturn.sidebar = document.activeElement;
+  $('sidebar').classList.add('open');  $('sidebar-overlay').classList.add('active');  document.body.style.overflow = 'hidden';
+  $('sidebar-close').focus({ preventScroll: true });
+}
+function closeSidebar() {
+  $('sidebar').classList.remove('open'); $('sidebar-overlay').classList.remove('active'); document.body.style.overflow = '';
+  focusReturn.sidebar?.focus?.({ preventScroll: true });
+  focusReturn.sidebar = null;
+}
 
 // ================================================================
 // MAP
@@ -311,24 +349,35 @@ function showMapPlaceholder(city, listings) {
       </div>
       <div style="font-size:11px;color:var(--cream-faint);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px;">Listings near ${escapeHtml(city || 'your destination')}</div>
       ${listings.map((l) => `
-        <div class="map-placeholder-item" data-listing-id="${escapeHtml(l.id)}" style="background:var(--driftwood);border:1px solid rgba(200,151,42,0.15);border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s;">
+        <button type="button" class="map-placeholder-item" data-listing-id="${escapeHtml(l.id)}" aria-label="Highlight ${escapeHtml(l.title)} in the chat" style="display:block;width:100%;text-align:left;font-family:inherit;background:var(--driftwood);border:1px solid rgba(200,151,42,0.15);border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div style="font-family:var(--font-display);font-size:15px;color:var(--cream);font-weight:500;">${escapeHtml(l.title)}</div>
             <div style="font-size:14px;color:var(--gold-light);white-space:nowrap;margin-left:8px;">$${Number(l.price) || '?'}<span style="font-size:10px;color:var(--cream-faint)">/night</span></div>
           </div>
           <div style="font-size:12px;color:var(--cream-dim);margin-top:3px;">📍 ${escapeHtml(l.location)}</div>
           <div style="font-size:12px;color:var(--gold);margin-top:2px;">★ ${Number(l.rating) || '—'} · ${Number(l.reviews) || 0} reviews</div>
-        </div>`).join('')}
+        </button>`).join('')}
     </div>`;
   container.querySelectorAll('[data-listing-id]').forEach(el => {
     el.addEventListener('click', () => highlightListingCard(el.dataset.listingId));
     el.addEventListener('mouseover', () => el.style.borderColor = 'rgba(200,151,42,0.4)');
     el.addEventListener('mouseout',  () => el.style.borderColor = 'rgba(200,151,42,0.15)');
+    el.addEventListener('focus',     () => el.style.borderColor = 'rgba(200,151,42,0.4)');
+    el.addEventListener('blur',      () => el.style.borderColor = 'rgba(200,151,42,0.15)');
   });
   $('map-count').textContent = `${listings.length} listings`;
 }
 
-function toggleMap() { if (state.mapOpen) hideMap(); else showMap(); }
+function toggleMap() {
+  if (state.mapOpen) { hideMap(); return; }
+  // Explicit user action (clicked the Map button) — move focus in, and
+  // remember where to send it back on close. Auto-opens after a search
+  // (registerListings) call showMap() directly and skip this, since
+  // grabbing focus away from an in-progress chat would be disorienting.
+  focusReturn.map = document.activeElement;
+  showMap();
+  $('map-close-btn').focus({ preventScroll: true });
+}
 
 function showMap() {
   state.mapOpen = true;
@@ -341,12 +390,16 @@ function hideMap() {
   state.mapOpen = false;
   $('map-panel').classList.remove('open');
   $('map-toggle-btn').classList.remove('active');
+  focusReturn.map?.focus?.({ preventScroll: true });
+  focusReturn.map = null;
 }
+
+const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function highlightListingCard(id) {
   const card = document.querySelector(`[data-listing-id="${CSS.escape(String(id))}"]`);
   if (card) {
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
     card.style.borderColor = 'rgba(200,151,42,0.8)';
     setTimeout(() => card.style.borderColor = '', 1500);
   }
@@ -440,12 +493,16 @@ function openCompare() {
   $('compare-overlay').classList.add('active');
   $('compare-modal').classList.add('open');
   document.body.style.overflow = 'hidden';
+  focusReturn.compare = document.activeElement;
+  document.querySelector('.compare-close').focus({ preventScroll: true });
 }
 
 function closeCompare() {
   $('compare-overlay').classList.remove('active');
   $('compare-modal').classList.remove('open');
   document.body.style.overflow = '';
+  focusReturn.compare?.focus?.({ preventScroll: true });
+  focusReturn.compare = null;
 }
 
 // ── Toast notification ───────────────────────────────────────────

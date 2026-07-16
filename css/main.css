@@ -14,7 +14,7 @@
   --amber:       #d4793a;
   --cream:       #f0e6d3;
   --cream-dim:   #a89880;
-  --cream-faint: #5a4e40;
+  --cream-faint: #9c8d78; /* was #5a4e40 — failed WCAG AA (2.4:1) against every bg it's used on; this clears 4.5:1+ */
   --sand:        #e8d5b8;
   --teal:        #2a8a7a;
   --teal-light:  #3ab89f;
@@ -31,6 +31,56 @@ html, body {
   font-family: var(--font-body);
   font-size: 15px;
   overflow: hidden;
+  color-scheme: dark; /* matches native scrollbars/form controls to the dark theme */
+}
+
+/* ================================================================
+   ACCESSIBILITY & MOBILE UX — applies app-wide
+   ================================================================ */
+
+/* Skip link — first focusable element, hidden until keyboard-focused */
+.skip-link {
+  position: fixed; top: -100%; left: 12px; z-index: 100;
+  background: var(--gold-light); color: var(--espresso);
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  font-family: var(--font-body); font-size: 13px; font-weight: 500;
+  text-decoration: none; transition: top 0.15s ease;
+}
+.skip-link:focus { top: 12px; }
+
+/* Visible keyboard-focus ring on every interactive element. Click focus stays
+   clean (:focus-visible only fires for keyboard/programmatic focus). */
+:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* The textarea's own outline is redundant — .input-row:focus-within already
+   draws a visible border around the whole compound control when it's focused. */
+#chat-input:focus-visible { outline: none; }
+
+/* Screen-reader-only text — visually hidden, still announced */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* Touch: no 300ms tap delay, no default gray flash (focus-visible ring above
+   is the intentional replacement) */
+button, a, input, textarea, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Motion: honor the OS-level reduced-motion preference everywhere */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body::before {
@@ -111,7 +161,7 @@ body::before {
   padding: 6px 14px; border-radius: 20px;
   font-family: var(--font-body); font-size: 12px;
   cursor: pointer; letter-spacing: 0.04em;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
 }
 .btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
 
@@ -125,7 +175,7 @@ body::before {
   padding: 6px 12px; border-radius: 20px;
   font-family: var(--font-body); font-size: 12px;
   cursor: pointer; align-items: center; gap: 5px;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .sidebar-toggle:hover { border-color: var(--gold); color: var(--gold); }
 
@@ -142,6 +192,7 @@ body::before {
   padding: 28px 32px;
   display: flex; flex-direction: column; gap: 20px;
   scroll-behavior: smooth;
+  overscroll-behavior: contain; /* scrolling the chat shouldn't chain into pull-to-refresh */
 }
 .messages::-webkit-scrollbar { width: 4px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
@@ -185,10 +236,10 @@ body::before {
   border: 1px solid rgba(200,151,42,0.2);
   border-radius: var(--radius-sm);
   padding: 13px 15px; margin-top: 10px;
-  transition: border-color 0.2s, transform 0.15s;
-  cursor: pointer; position: relative;
+  position: relative;
+  /* Not itself clickable — the checkbox and the two link buttons inside it
+     are the real interactive elements, so no pointer cursor / hover-lift here. */
 }
-.listing-card:hover { border-color: rgba(200,151,42,0.5); transform: translateY(-1px); }
 
 /* Compare checkbox on listing card */
 .listing-compare-check {
@@ -299,13 +350,14 @@ body::before {
   color: var(--cream-dim); width: 32px; height: 32px;
   border-radius: 50%; font-size: 14px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .compare-close:hover { border-color: var(--gold); color: var(--cream); }
 
 .compare-body {
   overflow-y: auto; padding: 0;
   flex: 1;
+  overscroll-behavior: contain;
 }
 .compare-body::-webkit-scrollbar { width: 4px; }
 .compare-body::-webkit-scrollbar-thumb { background: var(--cream-faint); }
@@ -441,7 +493,7 @@ body::before {
   color: var(--cream-dim); width: 28px; height: 28px;
   border-radius: 50%; font-size: 13px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .map-close-btn:hover { border-color: var(--gold); color: var(--cream); }
 
@@ -482,7 +534,7 @@ body::before {
 
 /* ── INPUT AREA ── */
 .input-area {
-  padding: 14px 20px 18px;
+  padding: 14px max(20px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   border-top: 1px solid rgba(200,151,42,0.1);
   background: rgba(19,14,8,0.6); backdrop-filter: blur(8px);
 }
@@ -529,10 +581,10 @@ body::before {
 }
 .sidebar-title { font-family: var(--font-display); font-size: 18px; font-weight: 400; color: var(--cream); letter-spacing: 0.02em; margin-bottom: 2px; }
 .sidebar-sub   { font-size: 12px; color: var(--cream-dim); font-weight: 300; }
-.sidebar-close { display: none; background: none; border: 1px solid rgba(200,151,42,0.2); color: var(--cream-dim); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; align-items: center; justify-content: center; transition: all 0.2s; }
+.sidebar-close { display: none; background: none; border: 1px solid rgba(200,151,42,0.2); color: var(--cream-dim); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; align-items: center; justify-content: center; transition: border-color 0.2s, color 0.2s, background-color 0.2s; }
 .sidebar-close:hover { border-color: var(--gold); color: var(--cream); }
 
-.sidebar-body  { flex: 1; overflow-y: auto; padding: 18px 22px; }
+.sidebar-body  { flex: 1; overflow-y: auto; padding: 18px 22px; overscroll-behavior: contain; }
 .sidebar-body::-webkit-scrollbar { width: 3px; }
 .sidebar-body::-webkit-scrollbar-thumb { background: var(--cream-faint); }
 
@@ -577,7 +629,7 @@ body::before {
 .welcome-title em { font-style: italic; color: var(--gold-light); }
 .welcome-sub     { font-size: 15px; color: var(--cream-dim); font-weight: 300; max-width: 380px; line-height: 1.7; margin-bottom: 28px; }
 .quick-prompts   { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 480px; }
-.quick-prompt    { background: var(--bark); border: 1px solid rgba(200,151,42,0.2); color: var(--cream-dim); padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 300; cursor: pointer; transition: all 0.2s; user-select: none; }
+.quick-prompt    { font-family: inherit; text-align: inherit; background: var(--bark); border: 1px solid rgba(200,151,42,0.2); color: var(--cream-dim); padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 300; cursor: pointer; transition: border-color 0.2s, color 0.2s, background-color 0.2s; user-select: none; }
 .quick-prompt:hover { border-color: var(--gold); color: var(--cream); background: var(--driftwood); }
 
 .api-notice { background: rgba(42,138,122,0.12); border: 1px solid rgba(42,138,122,0.25); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 12px; color: var(--teal-light); margin-bottom: 16px; line-height: 1.5; }
@@ -610,6 +662,7 @@ body::before {
     z-index: 18; transform: translateX(100%);
     border-left: 1px solid rgba(200,151,42,0.2);
     box-shadow: -8px 0 40px rgba(0,0,0,0.5);
+    overscroll-behavior: contain;
   }
   .sidebar.open { transform: translateX(0); }
   .sidebar-overlay.active { display: block; }
@@ -617,14 +670,26 @@ body::before {
   .messages   { padding: 20px 18px; }
   .bubble     { max-width: 88%; }
 
+  /* Full-screen overlays get the top notch/status-bar inset; requires
+     viewport-fit=cover in the HTML viewport meta to be non-zero. */
+  .sidebar-header { padding-top: max(20px, env(safe-area-inset-top)); }
+  .map-header      { padding-top: max(14px, env(safe-area-inset-top)); }
+
   /* Map becomes full-screen slide-up on mobile */
   .map-panel {
     top: 0; width: 100vw; height: 100vh;
     transform: translateY(100%);
     border-left: none;
     border-top: 1px solid rgba(200,151,42,0.15);
+    overscroll-behavior: contain;
   }
   .map-panel.open { transform: translateY(0); }
+
+  /* 44x44 minimum touch target (WCAG 2.5.5 / platform guidance) for icon-only
+     controls that are visually smaller than that on desktop. */
+  .sidebar-close, .map-close-btn, .compare-close, .mic-btn, .send-btn {
+    width: 44px; height: 44px;
+  }
 }
 
 /* ================================================================
@@ -675,6 +740,8 @@ body::before {
 .saved-search-main {
   flex: 1; padding: 10px 12px;
   cursor: pointer; min-width: 0;
+  background: none; border: none; display: block; width: 100%;
+  font-family: inherit; text-align: left;
 }
 .saved-search-label {
   font-size: 13px; color: var(--cream);
@@ -713,7 +780,7 @@ body::before {
   border-radius: var(--radius-sm);
   font-family: var(--font-body); font-size: 12px;
   cursor: pointer; letter-spacing: 0.03em;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .sidebar-action-btn:hover {
   border-color: var(--gold);
@@ -738,7 +805,7 @@ body::before {
   color: var(--cream-dim); cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; margin-bottom: 4px;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .mic-btn:hover { border-color: var(--gold); color: var(--gold-light); }
 .mic-btn.listening {
@@ -761,7 +828,7 @@ body::before {
   color: var(--cream-dim);
   padding: 7px 14px; border-radius: 20px;
   font-family: var(--font-body); font-size: 12.5px;
-  cursor: pointer; transition: all 0.2s;
+  cursor: pointer; transition: border-color 0.2s, color 0.2s, background-color 0.2s;
   animation: tag-pop 0.25s cubic-bezier(0.34,1.56,0.64,1) both;
 }
 .reply-chip:hover { border-color: var(--gold); color: var(--gold-light); background: rgba(200,151,42,0.08); }
@@ -778,7 +845,7 @@ body::before {
   padding: 7px 10px; border-radius: var(--radius-sm);
   font-family: var(--font-body); font-size: 12px; font-weight: 500;
   text-decoration: none; letter-spacing: 0.02em;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 .listing-link-btn:hover { background: rgba(200,151,42,0.2); border-color: var(--gold); }
 
