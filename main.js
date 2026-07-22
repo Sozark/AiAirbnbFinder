@@ -432,7 +432,7 @@ function updateCompareBar() {
     bar.innerHTML = `
       <span class="compare-bar-text"><strong id="compare-bar-count">0</strong> selected</span>
       <button class="compare-bar-btn" onclick="openCompare()">Compare</button>
-      <button class="compare-bar-clear" onclick="clearCompare()" title="Clear">✕</button>`;
+      <button class="compare-bar-clear" onclick="clearCompare()" aria-label="Clear comparison selection">✕</button>`;
     document.body.appendChild(bar);
   }
 

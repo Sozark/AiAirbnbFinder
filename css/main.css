@@ -686,9 +686,16 @@ body::before {
   .map-panel.open { transform: translateY(0); }
 
   /* 44x44 minimum touch target (WCAG 2.5.5 / platform guidance) for icon-only
-     controls that are visually smaller than that on desktop. */
-  .sidebar-close, .map-close-btn, .compare-close, .mic-btn, .send-btn {
-    width: 44px; height: 44px;
+     controls that are visually smaller than that on desktop.
+     `button.` prefix (not just `.class`) bumps specificity above each
+     control's own later, unconditional base rule (e.g. .mic-btn's own
+     34px declaration appears further down the file and would otherwise
+     win the source-order tiebreak despite this media query matching).
+     flex-shrink:0 stops flex parents (e.g. .compare-header, squeezed by
+     its heading text on a narrow screen) from compressing them below size. */
+  button.sidebar-close, button.map-close-btn, button.compare-close,
+  button.mic-btn, button.send-btn {
+    width: 44px; height: 44px; flex-shrink: 0;
   }
 }
 
