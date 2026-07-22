@@ -261,7 +261,7 @@ document.addEventListener('keydown', (e) => {
 function openSidebar()  {
   focusReturn.sidebar = document.activeElement;
   $('sidebar').classList.add('open');  $('sidebar-overlay').classList.add('active');  document.body.style.overflow = 'hidden';
-  $('sidebar-close').focus({ preventScroll: true });
+  document.querySelector('.sidebar-close').focus({ preventScroll: true });
 }
 function closeSidebar() {
   $('sidebar').classList.remove('open'); $('sidebar-overlay').classList.remove('active'); document.body.style.overflow = '';
@@ -376,7 +376,7 @@ function toggleMap() {
   // grabbing focus away from an in-progress chat would be disorienting.
   focusReturn.map = document.activeElement;
   showMap();
-  $('map-close-btn').focus({ preventScroll: true });
+  document.querySelector('.map-close-btn').focus({ preventScroll: true });
 }
 
 function showMap() {
