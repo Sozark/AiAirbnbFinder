@@ -33,7 +33,10 @@ function hide(id) { $(id).style.display = 'none'; }
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str === null || str === undefined ? '' : String(str);
-  return div.innerHTML;
+  // Text-node serialization escapes & < > but NOT quotes; escape them too so
+  // interpolating into an HTML attribute value (data-*, aria-label, href…)
+  // can't break out of the surrounding quotes.
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // Only allow http(s) URLs through as href values — blocks javascript: etc.
@@ -543,7 +546,7 @@ function buildListingCard(listing) {
   return `
     <div class="listing-card" data-listing-id="${id}">
       <label class="listing-compare-check">
-        <input type="checkbox" id="compare-cb-${id}" onchange="toggleCompare('${id}', this.checked)"> Compare
+        <input type="checkbox" class="compare-toggle" id="compare-cb-${id}" data-compare-id="${id}"> Compare
       </label>
       <div class="listing-card-header">
         <div class="listing-title">${escapeHtml(listing.title)}</div>
@@ -793,11 +796,22 @@ function toggleReadAloud(btn, text) {
 // BACKEND — secure proxy call + tool-use handling
 // ================================================================
 async function callBackend() {
-  const res = await fetch(API_BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: state.conversationHistory }),
-  });
+  // Abort a hung request so the spinner can't spin forever and the demo
+  // fallback in sendMessage() actually fires.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  let res;
+  try {
+    res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: state.conversationHistory }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1041,7 +1055,11 @@ async function sendMessage() {
   addMessage('user', text);
   clearChips();
 
-  const userBlocks = [...state.pendingToolResults, { type: 'text', text }];
+  // Capture the tool_result acknowledgments we're about to send so we can
+  // re-queue them if this call fails — otherwise the preceding assistant
+  // tool_use turn is left dangling and every future real call 400s.
+  const sentToolResults = state.pendingToolResults;
+  const userBlocks = [...sentToolResults, { type: 'text', text }];
   state.pendingToolResults = [];
   state.conversationHistory.push({ role: 'user', content: userBlocks });
 
@@ -1057,6 +1075,10 @@ async function sendMessage() {
     removeTyping(); removeSearchProgress();
     // Roll back the optimistic turn so a later successful call isn't corrupted.
     state.conversationHistory.pop();
+    // Re-queue the tool_result acks that were bundled into the popped turn, so
+    // the still-present assistant tool_use turn gets satisfied on the next send
+    // instead of being left dangling (which would 400 every future real call).
+    state.pendingToolResults = sentToolResults;
     console.warn('Backend call failed, falling back to demo mode:', err.message);
     const reply = await simulateResponse(text);
     const isHtml = reply.includes('listing-card');
@@ -1113,6 +1135,14 @@ window.addEventListener('DOMContentLoaded', () => {
   renderSavedSearches();
   readSharedUrl();
   checkBackend();
+
+  // Delegated handler for listing "Compare" checkboxes. Covers both live and
+  // demo cards (both injected into #messages) without inline handlers, so a
+  // model-supplied listing id can never become executable attribute content.
+  messages.addEventListener('change', (e) => {
+    const cb = e.target.closest('.compare-toggle');
+    if (cb) toggleCompare(cb.dataset.compareId, cb.checked);
+  });
 
   if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) {
     const mic = $('mic-btn');
