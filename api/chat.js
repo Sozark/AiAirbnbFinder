@@ -184,7 +184,11 @@ export default async function handler(req) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
+      // 2048 was too tight: a turn that does a real web_search AND builds out
+      // 3-5 detailed present_listings cards can get cut off mid-response,
+      // splitting a web_search tool_use from its result and permanently
+      // corrupting that session's history (every later turn then 400s).
+      max_tokens: 8192,
       system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       tools: TOOLS,
       messages,
