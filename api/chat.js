@@ -174,32 +174,40 @@ export default async function handler(req) {
     }
   }
 
-  // 4) forward to Anthropic with the server-side key + prompt caching on the system prompt
-  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      // 2048 was too tight: a turn that does a real web_search AND builds out
-      // 3-5 detailed present_listings cards can get cut off mid-response,
-      // splitting a web_search tool_use from its result and permanently
-      // corrupting that session's history (every later turn then 400s).
-      max_tokens: 8192,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      tools: TOOLS,
-      messages,
-      stream: false,
-    }),
-  });
+  // 4) forward to Anthropic with the server-side key + prompt caching on the system prompt.
+  // Server-side tools (web_search) can hit their internal iteration limit mid-turn, which
+  // comes back as stop_reason "pause_turn" with a trailing, unresolved tool_use block —
+  // resend the same messages (no new user text) to let the server pick up where it left
+  // off. Looping here means the browser only ever sees a fully-resolved turn, so
+  // client-side history never gets stuck with a tool_use that has no matching result.
+  const conversationMessages = [...messages];
+  let data;
+  for (let i = 0; i < 5; i++) {
+    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 8192,
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        tools: TOOLS,
+        messages: conversationMessages,
+        stream: false,
+      }),
+    });
 
-  const data = await upstream.json().catch(() => null);
-  if (!upstream.ok || !data) {
-    const detail = typeof data === 'object' ? JSON.stringify(data).slice(0, 400) : '';
-    return json(upstream.status || 502, { error: 'Upstream error', detail });
+    data = await upstream.json().catch(() => null);
+    if (!upstream.ok || !data) {
+      const detail = typeof data === 'object' ? JSON.stringify(data).slice(0, 400) : '';
+      return json(upstream.status || 502, { error: 'Upstream error', detail });
+    }
+
+    if (data.stop_reason !== 'pause_turn') break;
+    conversationMessages.push({ role: 'assistant', content: data.content });
   }
 
   // 5) pass the Anthropic message straight back to the browser
