@@ -290,9 +290,22 @@
 
 </div>
 
-<!-- Local config (gitignored). Copy config.example.js -> config.local.js.
-     If missing, main.js falls back to /api/chat with no Mapbox token. -->
-<script src="config.local.js" onerror="this.remove()"></script>
+<!-- Config: try /api/config first (reads MAPBOX_TOKEN from a real Vercel
+     Environment Variable — works on the live site and under `vercel dev`).
+     Plain blocking <script src> tags guarantee the browser resolves each one
+     (load or 404) before moving on, so this always finishes ahead of main.js
+     with no race condition. If /api/config doesn't exist (plain static
+     hosting, no serverless functions), document.write() inserts a second
+     blocking script tag for the local gitignored config.local.js (copy from
+     config.example.js) — same trick browsers have used for CDN-with-local-
+     fallback for years. If neither is present, main.js falls back to
+     /api/chat with no Mapbox token — the map shows a placeholder list. -->
+<script src="/api/config" onerror="this.dataset.failed=1"></script>
+<script>
+  if (document.querySelector('script[src="/api/config"]').dataset.failed) {
+    document.write('<script src="config.local.js" onerror="this.remove()">\x3C/script>');
+  }
+</script>
 <script src="main.js"></script>
 
 <!-- Register the service worker so the site is installable as an app -->
