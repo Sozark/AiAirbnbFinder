@@ -207,6 +207,23 @@ export default async function handler(req) {
       return json(upstream.status || 502, { error: 'Upstream error', detail, __trace });
     }
 
+    // Drop any server-side tool call (e.g. web_search) that never got a
+    // matching result block. This happens when the model also emits a client
+    // tool_use (update_preferences, etc.) in the same turn: the response
+    // stops with the ordinary stop_reason "tool_use" for the client tool,
+    // but Anthropic never resolves the server tool call, leaving it
+    // permanently orphaned. Left in place, that poisons history -- the next
+    // request 400s with "... tool use ... without a corresponding ... result
+    // block". We only strip the unresolved call itself; every other block
+    // (text, client tool_use) still reaches the browser normally.
+    if (Array.isArray(data.content)) {
+      data.content = data.content.filter((block, idx, arr) => {
+        if (block.type !== 'server_tool_use') return true;
+        const next = arr[idx + 1];
+        return !!(next && next.type && next.type.endsWith('_tool_result'));
+      });
+    }
+
     __trace.push({
       iteration: i,
       stop_reason: data.stop_reason,
