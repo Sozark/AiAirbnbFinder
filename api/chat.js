@@ -182,6 +182,7 @@ export default async function handler(req) {
   // client-side history never gets stuck with a tool_use that has no matching result.
   const conversationMessages = [...messages];
   let data;
+  const __trace = []; // TEMPORARY diagnostic — remove once the pause_turn issue is confirmed fixed
   for (let i = 0; i < 5; i++) {
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -203,13 +204,20 @@ export default async function handler(req) {
     data = await upstream.json().catch(() => null);
     if (!upstream.ok || !data) {
       const detail = typeof data === 'object' ? JSON.stringify(data).slice(0, 400) : '';
-      return json(upstream.status || 502, { error: 'Upstream error', detail });
+      return json(upstream.status || 502, { error: 'Upstream error', detail, __trace });
     }
+
+    __trace.push({
+      iteration: i,
+      stop_reason: data.stop_reason,
+      blockTypes: Array.isArray(data.content) ? data.content.map(b => b.type) : null,
+    });
 
     if (data.stop_reason !== 'pause_turn') break;
     conversationMessages.push({ role: 'assistant', content: data.content });
   }
 
   // 5) pass the Anthropic message straight back to the browser
+  data.__trace = __trace; // TEMPORARY — remove once diagnosed
   return json(200, data);
 }
