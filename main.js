@@ -40,6 +40,13 @@ function escapeHtml(str) {
 }
 
 // Only allow http(s) URLs through as href values — blocks javascript: etc.
+// Tag colours land inside a class="" attribute, where escaping isn't enough —
+// a value like `x" onmouseover="…` would break out. tagColors isn't in the
+// present_listings schema, but listing data originates from web_search results,
+// so treat it as untrusted and allow only known palette names.
+const TAG_COLORS = ['gold', 'amber', 'green'];
+function safeTagColor(c) { return TAG_COLORS.includes(c) ? c : 'gold'; }
+
 function safeUrl(url) {
   if (!url) return '';
   try {
@@ -462,7 +469,7 @@ function openCompare() {
     { label: 'Type',          key: l => l.type === 'airbnb' ? '🏠 Airbnb' : '🏨 Hotel' },
     { label: 'Location',      key: l => escapeHtml(l.location) },
     { label: 'Amenities',     key: l => `<div class="compare-tags">${(l.amenities||[]).map(a => `<span class="tag tag-green">${escapeHtml(a)}</span>`).join('')}</div>` },
-    { label: 'Highlights',    key: l => `<div class="compare-tags">${(l.tags||[]).map((t,i) => `<span class="tag tag-${(l.tagColors||[])[i]||'gold'}">${escapeHtml(t)}</span>`).join('')}</div>` },
+    { label: 'Highlights',    key: l => `<div class="compare-tags">${(l.tags||[]).map((t,i) => `<span class="tag tag-${safeTagColor((l.tagColors||[])[i])}">${escapeHtml(t)}</span>`).join('')}</div>` },
   ];
 
   const bestPrice  = Math.min(...selected.map(l => Number(l.price) || Infinity));
@@ -517,26 +524,88 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
+// ── Date normalisation ───────────────────────────────────────────
+// Airbnb and Booking.com both require a strict YYYY-MM-DD `checkin`/`checkout`.
+// The model fills these from free-form chat ("September 20th"), so the raw
+// value often isn't ISO. Booking.com does NOT reject an unparseable date — it
+// silently ignores it and returns today/tomorrow results, which is worse than
+// no date at all: the user lands on the right city with the wrong dates and
+// wrong prices. So we normalise here and, when we can't, omit the param and
+// let the site ask rather than send a date it will quietly get wrong.
+function toISODate(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+
+  // Already ISO — return as-is. Never round-trip through `new Date()`: it
+  // parses ISO as UTC, so "2026-09-20" comes back as Sep 19 west of GMT.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // Ordinal suffixes ("20th") make Date.parse return Invalid Date.
+  const cleaned = s.replace(/(\d+)(?:st|nd|rd|th)\b/gi, '$1');
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // V8's legacy parser is extremely permissive: it discards words it doesn't
+  // recognise and latches onto any stray number, so "next friday 2026" yields
+  // January 1st rather than failing. Only trust a parse whose day-of-month
+  // actually appears in the input — otherwise we'd invent a date outright.
+  const parse = str => {
+    const d = new Date(str);
+    if (isNaN(d)) return null;
+    return new RegExp(`(^|\\D)${d.getDate()}(\\D|$)`).test(cleaned) ? d : null;
+  };
+
+  if (/\b\d{4}\b/.test(cleaned)) return parse(cleaned) ? fmt(parse(cleaned)) : null;
+
+  // No year given. Date.parse would invent one (V8 reads "September 20" as
+  // 2001), so anchor to the next occurrence: this year, else next year.
+  const year = new Date().getFullYear();
+  const thisYear = parse(`${cleaned} ${year}`);
+  if (!thisYear) return null;
+  // Allow a day of slack so an in-progress trip doesn't jump 12 months.
+  if (thisYear.getTime() >= Date.now() - 864e5) return fmt(thisYear);
+  const nextYear = parse(`${cleaned} ${year + 1}`);
+  return nextYear ? fmt(nextYear) : null;
+}
+
 // ── Honest booking deep links (we don't book — we point to real search results) ──
 function bookingUrl(kind, listing) {
   const dest = encodeURIComponent(listing.location || state.prefs.destination || state.demoCity || '');
-  const guests = state.prefs.num_guests || 1;
+  const checkIn  = toISODate(state.prefs.check_in);
+  const checkOut = toISODate(state.prefs.check_out);
+  // Both sites price adults and children differently, so passing the combined
+  // guest count as the adult count overprices a family and can filter out
+  // places that would actually fit them. Derive the split when we know it.
+  const ages = (state.prefs.children_ages || []).filter(a => Number.isFinite(a) && a >= 0 && a < 18);
+  const children = state.prefs.num_children || ages.length;
+  const adults = state.prefs.num_adults || Math.max(1, (state.prefs.num_guests || 1) - children);
   if (kind === 'airbnb') {
-    let url = `https://www.airbnb.com/s/${dest}/homes?adults=${guests}`;
-    if (state.prefs.check_in)  url += `&checkin=${encodeURIComponent(state.prefs.check_in)}`;
-    if (state.prefs.check_out) url += `&checkout=${encodeURIComponent(state.prefs.check_out)}`;
+    // Airbnb bills under-2s as infants, who don't count toward occupancy.
+    // Without ages we can't tell them apart, so everyone lands in `children`.
+    const infants = ages.filter(a => a < 2).length;
+    const kids = ages.length ? ages.length - infants : children;
+    let url = `https://www.airbnb.com/s/${dest}/homes?adults=${adults}`;
+    if (kids)     url += `&children=${kids}`;
+    if (infants)  url += `&infants=${infants}`;
+    if (checkIn)  url += `&checkin=${checkIn}`;
+    if (checkOut) url += `&checkout=${checkOut}`;
     return url;
   }
-  let url = `https://www.booking.com/searchresults.html?ss=${dest}&group_adults=${guests}`;
-  if (state.prefs.check_in)  url += `&checkin=${encodeURIComponent(state.prefs.check_in)}`;
-  if (state.prefs.check_out) url += `&checkout=${encodeURIComponent(state.prefs.check_out)}`;
+  let url = `https://www.booking.com/searchresults.html?ss=${dest}&group_adults=${adults}`;
+  // Booking.com needs one `age` per child alongside the count. If we only know
+  // the count it still beats counting kids as adults — the site prompts for
+  // ages instead of quietly returning adult-priced results.
+  if (children) url += `&group_children=${children}`;
+  for (const age of ages) url += `&age=${age}`;
+  if (checkIn)  url += `&checkin=${checkIn}`;
+  if (checkOut) url += `&checkout=${checkOut}`;
   return url;
 }
 
 // ── Build listing card HTML ──────────────────────────────────────
 function buildListingCard(listing) {
   const tagHtml = (listing.tags || []).map((t, i) => {
-    const color = (listing.tagColors || [])[i] || 'gold';
+    const color = safeTagColor((listing.tagColors || [])[i]);
     return `<span class="tag tag-${color}">${escapeHtml(t)}</span>`;
   }).join('');
 
@@ -690,10 +759,20 @@ function updatePreferences(data) {
 
   if (p.destination) { $('pref-destination').textContent = p.destination; $('pref-destination').classList.remove('pending'); show('sec-destination'); }
   if (p.check_in || p.check_out) {
-    const fmt = d => { if(!d) return '?'; const [y,m,dy]=d.split('-'); return `${m}/${dy}/${y.slice(2)}`; };
+    // Show the same date the booking links will use, so the panel never
+    // disagrees with where the user actually lands. Unparseable values fall
+    // back to the raw text rather than a misleading normalised guess.
+    const fmt = d => { if(!d) return '?'; const iso = toISODate(d); if(!iso) return String(d); const [y,m,dy]=iso.split('-'); return `${m}/${dy}/${y.slice(2)}`; };
     $('pref-dates').textContent = `${fmt(p.check_in)} → ${fmt(p.check_out)}`; show('sec-dates');
   }
-  if (p.num_guests) { let g=`${p.num_guests} guest${p.num_guests>1?'s':''}`; if(p.num_adults||p.num_children) g+=` (${p.num_adults||0} adults, ${p.num_children||0} children)`; $('pref-guests').textContent=g; show('sec-guests'); }
+  if (p.num_guests) {
+    let g=`${p.num_guests} guest${p.num_guests>1?'s':''}`;
+    if(p.num_adults||p.num_children) g+=` (${p.num_adults||0} adults, ${p.num_children||0} children)`;
+    // Ages drive child pricing on both sites, so show them back for confirmation.
+    const ages=(p.children_ages||[]).filter(a=>Number.isFinite(a));
+    if(ages.length) g+=` · ages ${ages.join(', ')}`;
+    $('pref-guests').textContent=g; show('sec-guests');
+  }
   show('div-1');
   if (p.budget_max || p.budget_min) {
     const sym = (p.budget_currency==='EUR')?'€':(p.budget_currency==='GBP')?'£':'$';

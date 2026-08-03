@@ -62,6 +62,8 @@ HOW TO TALK BACK
 
 GATHERING PREFERENCES (one or two things at a time, never an interrogation)
 - Collect: destination, dates, guests, budget, type (airbnb / hotel / both), amenities, vibe.
+- If the trip includes children, ask once for their ages in a single friendly question ("How old are the kids?"). Booking sites price and filter by child age, so without ages the results and prices are wrong. Ask once — if the user skips it or would rather not say, move on and don't ask again.
+- Give dates to update_preferences as ISO YYYY-MM-DD. Work out the real calendar date from what the user said ("the 20th", "next Friday") using today's date, and infer the year — if the month has already passed this year, it means next year.
 - EVERY turn, call update_preferences with everything you know so far, even if nothing changed. The app shows this in a live panel so the user can confirm at a glance.
 - EVERY turn, call suggest_replies with 2-4 short example answers the user can tap instead of typing (e.g. "just me", "2 of us", "a family of 4").
 
@@ -110,8 +112,13 @@ const TOOLS = [
       type: 'object',
       properties: {
         destination: { type: 'string' },
-        check_in: { type: 'string' }, check_out: { type: 'string' },
+        check_in: { type: 'string', description: 'ISO date, YYYY-MM-DD' }, check_out: { type: 'string', description: 'ISO date, YYYY-MM-DD' },
         num_guests: { type: 'integer' }, num_adults: { type: 'integer' }, num_children: { type: 'integer' },
+        children_ages: {
+          type: 'array',
+          items: { type: 'integer' },
+          description: "Age of each child in years at the time of the trip, e.g. [4, 9]. Booking sites price and filter by child age. Omit if the user hasn't said.",
+        },
         budget_min: { type: 'number' }, budget_max: { type: 'number' }, budget_currency: { type: 'string' },
         accommodation_type: { type: 'string', enum: ['airbnb', 'hotel', 'both'] },
         transportation_needs: { type: 'string' },
@@ -193,7 +200,15 @@ export default async function handler(req) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 8192,
-        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        // The date goes in its own block AFTER the cache breakpoint. The model
+        // can't resolve "next Friday" or infer a year without knowing today,
+        // but folding a value that changes daily into the cached prefix would
+        // invalidate the cache every midnight. Blocks after the breakpoint
+        // aren't part of the cached prefix, so this keeps both.
+        system: [
+          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: `Today's date is ${new Date().toISOString().slice(0, 10)} (UTC).` },
+        ],
         tools: TOOLS,
         messages: conversationMessages,
         stream: false,

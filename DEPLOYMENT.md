@@ -21,7 +21,7 @@ described a plan; this describes what's built.
 
 1. Push this repo to GitHub (already done if you're reading this from the repo).
 2. Go to [vercel.com](https://vercel.com) → **Add New... → Project** → import
-   the `AiAirbnbFinder` repo. No build settings needed — it's static +
+   the `StayFinder` repo. No build settings needed — it's static +
    `api/chat.js`, which Vercel detects automatically.
 3. Before the first deploy (or right after, then redeploy), add environment
    variables under **Project → Settings → Environment Variables**:

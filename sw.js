@@ -1,5 +1,9 @@
 // StayFinder AI — service worker (installable PWA + offline shell)
-const CACHE = 'stayfinder-v1';
+// Bump this on every deploy that changes main.js / main.css / index.html.
+// The fetch handler is cache-first, so returning visitors keep running the
+// previously cached bundle until the cache NAME changes — the activate
+// handler below only purges caches that don't match the current one.
+const CACHE = 'stayfinder-v2';
 const SHELL = [
   '/', '/index.html', '/main.js', '/css/main.css',
   '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
